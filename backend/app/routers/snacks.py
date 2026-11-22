@@ -1,5 +1,7 @@
-from uuid import UUID
-from fastapi import APIRouter, Depends, Query
+import os
+from pathlib import Path
+from uuid import UUID, uuid4
+from fastapi import APIRouter, Depends, File, Query, UploadFile
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +20,10 @@ from app.schemas import (
 from app.sse import broadcaster
 
 router = APIRouter(prefix="/snacks", tags=["Snacks"])
+
+UPLOAD_DIR = Path(__file__).resolve().parent.parent.parent / "uploads"
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 
 
 async def _serialize_snack(
@@ -41,11 +47,34 @@ async def _serialize_snack(
         category=snack.category,
         quantity=snack.quantity,
         low_stock_threshold=snack.low_stock_threshold,
+        image_url=snack.image_url,
         status=snack.status,
         vote_count=vote_count,
         user_has_voted=user_has_voted,
         created_at=snack.created_at,
     )
+
+
+@router.post("/upload-image")
+async def upload_snack_image(
+    file: UploadFile = File(...),
+    admin_user: User = Depends(require_admin),
+):
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        raise AppError(
+            400,
+            "INVALID_IMAGE_TYPE",
+            "Only .jpg, .jpeg, .png, .webp, or .gif images are supported",
+        )
+    content = await file.read()
+    if len(content) > 5 * 1024 * 1024:
+        raise AppError(400, "IMAGE_TOO_LARGE", "Image must be smaller than 5 MB")
+
+    filename = f"{uuid4().hex}{ext}"
+    dest = UPLOAD_DIR / filename
+    dest.write_bytes(content)
+    return {"image_url": f"http://127.0.0.1:8000/uploads/{filename}"}
 
 
 @router.get("", response_model=list[SnackOut])
@@ -86,6 +115,7 @@ async def list_snacks(
                 category=s.category,
                 quantity=s.quantity,
                 low_stock_threshold=s.low_stock_threshold,
+                image_url=s.image_url,
                 status=s.status,
                 vote_count=vote_counts.get(s.id, 0),
                 user_has_voted=s.id in user_voted_ids,
@@ -106,6 +136,7 @@ async def create_snack(
         category=payload.category,
         quantity=payload.quantity,
         low_stock_threshold=payload.low_stock_threshold,
+        image_url=payload.image_url,
     )
     db.add(snack)
     try:
@@ -149,6 +180,8 @@ async def update_snack(
         snack.category = payload.category
     if payload.low_stock_threshold is not None:
         snack.low_stock_threshold = payload.low_stock_threshold
+    if payload.image_url is not None:
+        snack.image_url = payload.image_url
 
     try:
         await db.commit()
@@ -224,6 +257,7 @@ async def consume_snack(
         {
             "id": str(snack.id),
             "name": snack.name,
+            "image_url": snack.image_url,
             "quantity": snack.quantity,
             "status": snack.status,
             "vote_count": serialized.vote_count,
@@ -273,6 +307,7 @@ async def restock_snack(
         {
             "id": str(snack.id),
             "name": snack.name,
+            "image_url": snack.image_url,
             "quantity": snack.quantity,
             "status": snack.status,
             "vote_count": serialized.vote_count,
@@ -295,7 +330,6 @@ async def vote_snack(
     if not snack:
         raise AppError(404, "SNACK_NOT_FOUND", "Snack not found")
 
-    # Idempotent vote insert backed by DB unique constraint
     existing_res = await db.execute(
         select(Vote.id).where(Vote.user_id == current_user.id, Vote.snack_id == snack_id)
     )

@@ -10,10 +10,16 @@ interface CopilotPanelProps {
   onRestockApplied: () => void;
 }
 
-const QUICK_QUESTIONS = [
-  'What snacks are running low or out?',
+const ADMIN_PROMPTS = [
+  'What needs urgent restocking first?',
+  'Which snacks have the highest team votes?',
+  'Summarize current pantry stock levels',
+];
+
+const MEMBER_PROMPTS = [
   'Which healthy-ish snacks are in stock?',
-  'What should we restock first?',
+  'What sweet or savoury snacks are available?',
+  'What are the most popular snacks?',
 ];
 
 export function CopilotPanel({
@@ -29,6 +35,8 @@ export function CopilotPanel({
   const [asking, setAsking] = useState(false);
   const [restockingId, setRestockingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const quickQuestions = isAdmin ? ADMIN_PROMPTS : MEMBER_PROMPTS;
 
   useEffect(() => {
     if (!open || !token) return;
@@ -71,8 +79,10 @@ export function CopilotPanel({
 
   async function handleAskForm(e: FormEvent) {
     e.preventDefault();
-    await submitQuestion(question);
+    if (!question.trim()) return;
+    const currentQ = question;
     setQuestion('');
+    await submitQuestion(currentQ);
   }
 
   async function handleApproveRestock(rec: RestockRecommendation) {
@@ -93,14 +103,17 @@ export function CopilotPanel({
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/35 backdrop-blur-xs">
       <div className="w-full max-w-lg bg-white h-full shadow-2xl border-l border-slate-200 flex flex-col">
-        {/* Header */}
         <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-gradient-to-r from-amber-50 to-orange-50">
           <div className="flex items-center gap-2.5">
             <span className="text-xl">✨</span>
             <div>
-              <h2 className="font-bold text-slate-900 text-base">Pantry Copilot</h2>
+              <h2 className="font-bold text-slate-900 text-base">
+                {isAdmin ? 'Admin Procurement Copilot' : 'Member Snack Concierge'}
+              </h2>
               <p className="text-xs text-slate-500">
-                Demand &amp; restock intelligence powered by live pantry data
+                {isAdmin
+                  ? 'Velocity & upvote-driven restock intelligence'
+                  : 'Live pantry picks & restock request assistant'}
               </p>
             </div>
           </div>
@@ -113,14 +126,16 @@ export function CopilotPanel({
           </button>
         </div>
 
-        {/* Body */}
         <div className="flex-1 overflow-y-auto p-6 space-y-5">
-          {/* Ask Input */}
           <form onSubmit={handleAskForm} className="space-y-2">
             <div className="flex gap-2">
               <input
                 type="text"
-                placeholder="Ask about stock, healthy options, restocks..."
+                placeholder={
+                  isAdmin
+                    ? 'Ask about restock priorities, votes, or stock levels...'
+                    : 'Ask about available snacks, healthy picks, or favorites...'
+                }
                 value={question}
                 onChange={(e) => setQuestion(e.target.value)}
                 className="flex-1 rounded-lg border border-slate-300 px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
@@ -135,7 +150,7 @@ export function CopilotPanel({
             </div>
 
             <div className="flex flex-wrap gap-1.5">
-              {QUICK_QUESTIONS.map((q) => (
+              {quickQuestions.map((q) => (
                 <button
                   key={q}
                   type="button"
@@ -157,28 +172,28 @@ export function CopilotPanel({
 
           {loading ? (
             <div className="text-center py-10 text-sm text-slate-500">
-              Analyzing pantry stock, votes &amp; 7-day velocity...
+              Analyzing live pantry data...
             </div>
           ) : (
             data && (
               <>
-                {/* Briefing Card */}
                 <div className="rounded-xl bg-amber-50/70 border border-amber-200 p-4 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold uppercase tracking-wider text-amber-900">
-                      Copilot Briefing
+                      {isAdmin ? 'Restock Briefing' : 'Pantry Guide'}
                     </span>
                     <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-white border border-amber-200 text-amber-800">
-                      {data.source === 'gemini' ? 'Gemini 2.5 Flash' : 'Smart Engine'}
+                      {data.source === 'gemini' ? 'Gemini 2.5 Flash' : 'Smart Pantry Engine'}
                     </span>
                   </div>
                   <p className="text-sm text-slate-800 leading-relaxed">{data.answer}</p>
                 </div>
 
-                {/* Priority Restock Recommendations */}
                 <div className="space-y-3">
                   <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                    Recommended Restock Queue ({data.recommendations.length})
+                    {isAdmin
+                      ? `Actionable Restock Queue (${data.recommendations.length})`
+                      : `Low / Out-of-Stock Items (${data.recommendations.length})`}
                   </h3>
 
                   {data.recommendations.length === 0 ? (
@@ -225,8 +240,8 @@ export function CopilotPanel({
                                 : `Order +${rec.suggested_restock_qty}`}
                             </button>
                           ) : (
-                            <span className="font-semibold text-amber-800">
-                              Suggested +{rec.suggested_restock_qty}
+                            <span className="text-[11px] font-medium text-amber-800">
+                              Upvote on board to request
                             </span>
                           )}
                         </div>

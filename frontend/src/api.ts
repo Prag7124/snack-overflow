@@ -65,6 +65,25 @@ export const api = {
 
   me: (token: string) => request<User>('/auth/me', {}, token),
 
+  uploadSnackImage: async (token: string, file: File): Promise<string> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`${API_BASE}/snacks/upload-image`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    });
+    const body = await res.json().catch(() => null);
+    if (!res.ok) {
+      throw new ApiClientError(
+        res.status,
+        body?.error?.code || 'UPLOAD_FAILED',
+        body?.error?.message || 'Image upload failed'
+      );
+    }
+    return body.image_url as string;
+  },
+
   listSnacks: (
     token: string,
     filters?: { category?: SnackCategory | ''; status?: SnackStatus | ''; search?: string }
@@ -79,7 +98,13 @@ export const api = {
 
   createSnack: (
     token: string,
-    data: { name: string; category: SnackCategory; quantity: number; low_stock_threshold: number }
+    data: {
+      name: string;
+      category: SnackCategory;
+      quantity: number;
+      low_stock_threshold: number;
+      image_url?: string | null;
+    }
   ) =>
     request<Snack>(
       '/snacks',
@@ -90,7 +115,12 @@ export const api = {
   updateSnack: (
     token: string,
     id: string,
-    data: { name?: string; category?: SnackCategory; low_stock_threshold?: number }
+    data: {
+      name?: string;
+      category?: SnackCategory;
+      low_stock_threshold?: number;
+      image_url?: string | null;
+    }
   ) =>
     request<Snack>(
       `/snacks/${id}`,

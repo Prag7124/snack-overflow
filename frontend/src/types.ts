@@ -23,6 +23,7 @@ export interface Snack {
   category: SnackCategory;
   quantity: number;
   low_stock_threshold: number;
+  image_url: string | null;
   status: SnackStatus;
   vote_count: number;
   user_has_voted: boolean;
@@ -61,6 +62,7 @@ export interface RestockRecommendation {
 
 export interface CopilotResponse {
   answer: string;
+  role_mode: 'admin' | 'member';
   source: 'gemini' | 'smart-fallback';
   recommendations: RestockRecommendation[];
 }

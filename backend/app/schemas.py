@@ -36,12 +36,14 @@ class SnackCreate(BaseModel):
     category: SnackCategory
     quantity: int = Field(default=0, ge=0)
     low_stock_threshold: int = Field(default=5, ge=0)
+    image_url: str | None = Field(default=None, max_length=500)
 
 
 class SnackUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=2, max_length=120)
     category: SnackCategory | None = None
     low_stock_threshold: int | None = Field(default=None, ge=0)
+    image_url: str | None = Field(default=None, max_length=500)
 
 
 class StockAdjustRequest(BaseModel):
@@ -56,6 +58,7 @@ class SnackOut(BaseModel):
     category: SnackCategory
     quantity: int
     low_stock_threshold: int
+    image_url: str | None = None
     status: SnackStatus
     vote_count: int = 0
     user_has_voted: bool = False
@@ -103,5 +106,6 @@ class RestockRecommendation(BaseModel):
 
 class CopilotResponse(BaseModel):
     answer: str
+    role_mode: Literal["admin", "member"]
     source: Literal["gemini", "smart-fallback"]
     recommendations: list[RestockRecommendation] = []
