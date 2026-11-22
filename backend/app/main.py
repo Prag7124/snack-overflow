@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app import models  # noqa: F401
 from app.database import Base, engine
 from app.errors import register_exception_handlers
-from app.routers import auth, snacks
+from app.routers import activity, auth, copilot, events, snacks
 
 
 @asynccontextmanager
@@ -29,6 +29,9 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(snacks.router)
+app.include_router(events.router)
+app.include_router(activity.router)
+app.include_router(copilot.router)
 
 
 @app.get("/health")

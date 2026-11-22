@@ -60,3 +60,48 @@ class SnackOut(BaseModel):
     vote_count: int = 0
     user_has_voted: bool = False
     created_at: datetime
+
+
+# --- Activity Schemas ---
+ActivityAction = Literal["consumed", "restocked", "voted"]
+
+
+class ActivityOut(BaseModel):
+    id: UUID
+    user_name: str
+    user_email: str
+    snack_name: str
+    action: ActivityAction
+    amount: int
+    created_at: datetime
+
+
+class ActivitySummaryOut(BaseModel):
+    total_consumed_7d: int
+    total_restocked_7d: int
+    top_consumed_snack: str | None
+    items: list[ActivityOut]
+
+
+# --- Copilot Schemas ---
+class CopilotAskRequest(BaseModel):
+    question: str = Field(..., min_length=2, max_length=500)
+
+
+class RestockRecommendation(BaseModel):
+    snack_id: UUID
+    snack_name: str
+    category: SnackCategory
+    current_quantity: int
+    status: SnackStatus
+    vote_count: int
+    consumed_7d: int
+    suggested_restock_qty: int
+    priority: Literal["high", "medium", "low"]
+    reason: str
+
+
+class CopilotResponse(BaseModel):
+    answer: str
+    source: Literal["gemini", "smart-fallback"]
+    recommendations: list[RestockRecommendation] = []

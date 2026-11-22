@@ -100,7 +100,7 @@ class Activity(Base):
         UUID(as_uuid=True), ForeignKey("snacks.id", ondelete="CASCADE"), nullable=False
     )
     action: Mapped[str] = mapped_column(
-        Enum("restocked", "consumed", name="activity_action_enum"),
+        Enum("restocked", "consumed", "voted", name="activity_action_enum"),
         nullable=False,
     )
     amount: Mapped[int] = mapped_column(Integer, nullable=False)
