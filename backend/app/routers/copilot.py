@@ -624,7 +624,8 @@ async def ask_copilot(
                         pending_order_items=[OrderItemOut(snack_id=chosen.id, snack_name=chosen.name, quantity=1)],
                     )
 
-        if re.search(r"\b(order|buy|grab|get me|i want|i'd like|id like|need)\b", q_lower) and not any(
+        is_question_or_idea = q_raw.endswith("?") or any(w in q_lower for w in ("introduce", "new ", "suggest", "recommend", "idea", "could we", "should we", "what ", "which "))
+        if not is_question_or_idea and re.search(r"\b(order|buy|grab|get me|i want|i'd like|id like|need)\b", q_lower) and not any(
             w in q_lower for w in ("history", "most", "least", "who", "status", "pass", "passes", "pending", "sold")
         ):
             matched = _match_snacks_with_qty(q_lower, snacks, default_qty=1)
@@ -752,6 +753,12 @@ async def ask_copilot(
                     action_type="vote_added",
                 )
 
+        # Route all conversational Q&A directly to Gemini first
+        ai_answer = await _call_gemini(prompt)
+        if ai_answer:
+            return CopilotResponse(answer=ai_answer, role_mode=role, source="gemini", recommendations=recs[:4])
+
+        # Offline fallback rules only if Gemini is unavailable
         # 6. Gemini 2.5 Flash Reasoning over Live Inventory + Live Order/Member Analytics + Chat History
         inventory_snapshot = "\n".join(
             f"- {s.name} (category={s.category}): qty={s.quantity}, status={s.status}, votes={votes_map.get(s.id, 0)}"
@@ -779,10 +786,6 @@ async def ask_copilot(
             + (f"\nRECENT CONVERSATION:\n{recent_chat}\n" if recent_chat else "")
             + f"\nUSER MESSAGE: {q_raw}"
         )
-
-        ai_answer = await _call_gemini(prompt)
-        if ai_answer:
-            return CopilotResponse(answer=ai_answer, role_mode=role, source="gemini", recommendations=recs[:4])
 
         # 7. Fallback when GEMINI_API_KEY is not configured
         smart_answer = _smart_local_answer(q_raw, role, snacks, votes_map, consumed_map, recs)
