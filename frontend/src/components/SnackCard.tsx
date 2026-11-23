@@ -4,7 +4,9 @@ import type { Snack } from '../types';
 interface SnackCardProps {
   snack: Snack;
   isAdmin: boolean;
+  inTrayQty?: number;
   onConsume: (snack: Snack) => Promise<void>;
+  onAddToTray?: (snack: Snack) => void;
   onToggleVote: (snack: Snack) => Promise<void>;
   onQuickRestock: (snack: Snack, amount: number) => Promise<void>;
   onEditClick?: (snack: Snack) => void;
@@ -39,13 +41,16 @@ const CATEGORY_FALLBACK_IMG: Record<Snack['category'], string> = {
 export function SnackCard({
   snack,
   isAdmin,
+  inTrayQty = 0,
   onConsume,
+  onAddToTray,
   onToggleVote,
   onQuickRestock,
   onEditClick,
   onDeleteClick,
 }: SnackCardProps) {
   const [busyAction, setBusyAction] = useState<'consume' | 'vote' | 'restock' | null>(null);
+  const [restockQty, setRestockQty] = useState<number>(10);
   const style = STATUS_STYLES[snack.status];
   const imgSrc = snack.image_url || CATEGORY_FALLBACK_IMG[snack.category];
 
@@ -69,11 +74,11 @@ export function SnackCard({
     }
   }
 
-  async function handleRestock(amount: number) {
-    if (busyAction) return;
+  async function handleCustomRestock() {
+    if (busyAction || !Number.isFinite(restockQty) || restockQty < 1) return;
     setBusyAction('restock');
     try {
-      await onQuickRestock(snack, amount);
+      await onQuickRestock(snack, Math.floor(restockQty));
     } finally {
       setBusyAction(null);
     }
@@ -82,7 +87,6 @@ export function SnackCard({
   return (
     <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs hover:shadow-md transition flex flex-col justify-between">
       <div>
-        {/* Food Photo Header */}
         <div className="relative h-36 w-full bg-slate-100 overflow-hidden">
           <img
             src={imgSrc}
@@ -91,12 +95,16 @@ export function SnackCard({
             loading="lazy"
           />
           <span
+            title={`Current stock status: ${style.label}`}
             className={`absolute top-2.5 right-2.5 inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-0.5 rounded-full border backdrop-blur-xs ${style.badge}`}
           >
             <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
             {style.label}
           </span>
-          <span className="absolute bottom-2 left-2.5 text-[10px] font-bold uppercase tracking-wider bg-slate-900/75 text-white px-2 py-0.5 rounded-md">
+          <span
+            title={`Snack category: ${snack.category}`}
+            className="absolute bottom-2 left-2.5 text-[10px] font-bold uppercase tracking-wider bg-slate-900/75 text-white px-2 py-0.5 rounded-md"
+          >
             {snack.category}
           </span>
         </div>
@@ -109,9 +117,16 @@ export function SnackCard({
               <span className="text-2xl font-extrabold text-slate-900">{snack.quantity}</span>
               <span className="text-xs text-slate-500 ml-1.5">units left</span>
             </div>
-            <span className="text-[11px] text-slate-400">
+            <span
+              title={
+                isAdmin
+                  ? 'Total member restock requests for this snack'
+                  : 'Low-stock warning threshold'
+              }
+              className="text-[11px] text-slate-500 font-medium"
+            >
               {isAdmin
-                ? `${snack.vote_count} team vote(s)`
+                ? `${snack.vote_count} restock vote(s)`
                 : `Low alert ≤ ${snack.low_stock_threshold}`}
             </span>
           </div>
@@ -121,62 +136,101 @@ export function SnackCard({
       {/* Role-Specific Actions */}
       <div className="p-4 mt-3 pt-3 border-t border-slate-100">
         {isAdmin ? (
-          <div className="flex items-center justify-between gap-1.5">
-            <button
-              type="button"
-              disabled={busyAction !== null}
-              onClick={() => handleRestock(5)}
-              className="flex-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold py-2 px-2.5 transition cursor-pointer"
-            >
-              {busyAction === 'restock' ? 'Restocking...' : '+5 Restock'}
-            </button>
-            {onEditClick && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-1.5">
+              <input
+                type="number"
+                min={1}
+                max={100}
+                value={restockQty}
+                onChange={(e) => setRestockQty(Math.max(1, Number(e.target.value)))}
+                title="Enter quantity to add to stock"
+                aria-label={`Restock quantity for ${snack.name}`}
+                className="w-16 rounded-lg border border-slate-300 px-2 py-1.5 text-xs font-semibold text-slate-900 text-center focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
               <button
                 type="button"
-                onClick={() => onEditClick(snack)}
-                className="rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-medium py-2 px-2.5 transition cursor-pointer"
+                disabled={busyAction !== null || restockQty < 1}
+                onClick={handleCustomRestock}
+                title={`Add ${restockQty} units to ${snack.name}`}
+                className="flex-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-semibold py-1.5 px-2.5 transition cursor-pointer"
               >
-                Edit
+                {busyAction === 'restock' ? 'Adding...' : '+ Restock'}
               </button>
-            )}
-            {onDeleteClick && (
-              <button
-                type="button"
-                onClick={() => onDeleteClick(snack)}
-                className="rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-medium py-2 px-2.5 transition cursor-pointer"
-              >
-                Del
-              </button>
-            )}
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              {onEditClick && (
+                <button
+                  type="button"
+                  onClick={() => onEditClick(snack)}
+                  title="Edit snack name, category, photo, or threshold"
+                  className="flex-1 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-medium py-1.5 px-2.5 transition cursor-pointer"
+                >
+                  Edit
+                </button>
+              )}
+              {onDeleteClick && (
+                <button
+                  type="button"
+                  onClick={() => onDeleteClick(snack)}
+                  title="Delete this snack from the pantry"
+                  className="flex-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-medium py-1.5 px-2.5 transition cursor-pointer"
+                >
+                  Delete
+                </button>
+              )}
+            </div>
           </div>
         ) : (
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              disabled={snack.quantity <= 0 || busyAction !== null}
-              onClick={handleConsume}
-              className="flex-1 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-semibold py-2 px-3 transition cursor-pointer disabled:cursor-not-allowed"
-            >
-              {busyAction === 'consume'
-                ? 'Grabbing...'
-                : snack.quantity <= 0
-                ? 'Out of Stock'
-                : 'Grab 1'}
-            </button>
+          <div className="space-y-2">
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                disabled={snack.quantity <= 0 || busyAction !== null}
+                onClick={handleConsume}
+                title="Order 1 unit immediately and generate a Pickup Order Pass"
+                className="flex-1 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-semibold py-2 px-2.5 transition cursor-pointer disabled:cursor-not-allowed"
+              >
+                {busyAction === 'consume'
+                  ? 'Ordering...'
+                  : snack.quantity <= 0
+                  ? 'Out of Stock'
+                  : 'Quick Order 1'}
+              </button>
+
+              {onAddToTray && snack.quantity > 0 && (
+                <button
+                  type="button"
+                  disabled={inTrayQty >= snack.quantity}
+                  onClick={() => onAddToTray(snack)}
+                  title="Add to your Snack Tray to combine multiple snacks into one Order Number"
+                  className="rounded-lg bg-amber-50 hover:bg-amber-100 disabled:opacity-40 text-amber-900 border border-amber-200 text-xs font-semibold py-2 px-2.5 transition cursor-pointer"
+                >
+                  {inTrayQty > 0 ? `+ Tray (${inTrayQty})` : '+ Tray'}
+                </button>
+              )}
+            </div>
 
             <button
               type="button"
               disabled={busyAction !== null}
               onClick={handleVote}
-              title={snack.user_has_voted ? 'Remove restock vote' : 'Upvote for restock'}
-              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold transition cursor-pointer ${
+              title={
+                snack.user_has_voted
+                  ? 'Click to remove your restock request vote'
+                  : 'Request restock — upvote to tell Admin we want more of this snack'
+              }
+              className={`w-full inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
                 snack.user_has_voted
                   ? 'bg-amber-50 border-amber-300 text-amber-800'
-                  : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                  : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
               }`}
             >
-              <span>{snack.user_has_voted ? '▲' : '△'}</span>
-              <span>{snack.vote_count}</span>
+              <span>{snack.user_has_voted ? '▲ Upvoted' : '△ Vote for Restock'}</span>
+              <span className="px-1.5 py-0.2 rounded bg-slate-100 text-slate-800 text-[11px]">
+                {snack.vote_count}
+              </span>
             </button>
           </div>
         )}

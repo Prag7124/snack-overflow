@@ -3,6 +3,7 @@ import { api, ApiClientError } from './api';
 import { ActivityDrawer } from './components/ActivityDrawer';
 import { CopilotPanel } from './components/CopilotPanel';
 import { LoginView } from './components/LoginView';
+import { MemberOrdersDrawer, type TrayItem } from './components/MemberOrdersDrawer';
 import { PantryBoard } from './components/PantryBoard';
 import { SnackFormModal } from './components/SnackFormModal';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -14,6 +15,8 @@ function AppShell() {
   const [editingSnack, setEditingSnack] = useState<Snack | null>(null);
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
+  const [memberOrdersOpen, setMemberOrdersOpen] = useState(false);
+  const [tray, setTray] = useState<TrayItem[]>([]);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   if (loading) {
@@ -29,6 +32,30 @@ function AppShell() {
   }
 
   const isAdmin = user.role === 'admin';
+  const totalTrayCount = tray.reduce((sum, item) => sum + item.quantity, 0);
+
+  function handleAddToTray(snack: Snack) {
+    setTray((prev) => {
+      const existing = prev.find((i) => i.snack.id === snack.id);
+      if (existing) {
+        if (existing.quantity >= snack.quantity) return prev;
+        return prev.map((i) =>
+          i.snack.id === snack.id ? { ...i, quantity: i.quantity + 1 } : i
+        );
+      }
+      return [...prev, { snack, quantity: 1 }];
+    });
+  }
+
+  function handleUpdateTrayQty(snackId: string, qty: number) {
+    if (qty <= 0) {
+      setTray((prev) => prev.filter((i) => i.snack.id !== snackId));
+    } else {
+      setTray((prev) =>
+        prev.map((i) => (i.snack.id === snackId ? { ...i, quantity: qty } : i))
+      );
+    }
+  }
 
   function openAddModal() {
     setEditingSnack(null);
@@ -67,29 +94,41 @@ function AppShell() {
             <button
               type="button"
               onClick={() => setCopilotOpen(true)}
+              title="Open AI Pantry Copilot"
               className="rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 text-xs font-semibold px-3.5 py-2 transition cursor-pointer"
             >
               ✨ Pantry Copilot
             </button>
 
-            {isAdmin && (
+            {isAdmin ? (
               <>
                 <button
                   type="button"
                   onClick={() => setActivityOpen(true)}
+                  title="Verify member pickup Order Numbers & view 7-day activity"
                   className="rounded-lg bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-semibold px-3.5 py-2 transition cursor-pointer"
                 >
-                  📊 Activity Log
+                  📋 Orders &amp; Activity
                 </button>
 
                 <button
                   type="button"
                   onClick={openAddModal}
+                  title="Add a new snack item to the pantry"
                   className="rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold px-3.5 py-2 transition cursor-pointer"
                 >
                   + Add Snack
                 </button>
               </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setMemberOrdersOpen(true)}
+                title="View your Snack Tray, checkout, and show your Order Number pass at pickup"
+                className="rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold px-3.5 py-2 transition cursor-pointer"
+              >
+                🧾 My Tray &amp; Orders{totalTrayCount > 0 ? ` (${totalTrayCount})` : ''}
+              </button>
             )}
 
             <span
@@ -113,6 +152,9 @@ function AppShell() {
       <main className="max-w-7xl mx-auto px-6 py-6">
         <PantryBoard
           isAdmin={isAdmin}
+          tray={tray}
+          onAddToTray={!isAdmin ? handleAddToTray : undefined}
+          onOrderCreated={() => setRefreshTrigger((n) => n + 1)}
           onEditSnack={isAdmin ? openEditModal : undefined}
           onDeleteSnack={isAdmin ? handleDeleteSnack : undefined}
           refreshTrigger={refreshTrigger}
@@ -133,8 +175,17 @@ function AppShell() {
         onRestockApplied={() => setRefreshTrigger((n) => n + 1)}
       />
 
-      {isAdmin && (
+      {isAdmin ? (
         <ActivityDrawer open={activityOpen} onClose={() => setActivityOpen(false)} />
+      ) : (
+        <MemberOrdersDrawer
+          open={memberOrdersOpen}
+          tray={tray}
+          onUpdateQty={handleUpdateTrayQty}
+          onClearTray={() => setTray([])}
+          onOrderPlaced={() => setRefreshTrigger((n) => n + 1)}
+          onClose={() => setMemberOrdersOpen(false)}
+        />
       )}
     </div>
   );

@@ -2,6 +2,7 @@ export type UserRole = 'admin' | 'member';
 export type SnackCategory = 'sweet' | 'savoury' | 'drink' | 'healthy-ish';
 export type SnackStatus = 'stocked' | 'running_low' | 'gone';
 export type ActivityAction = 'consumed' | 'restocked' | 'voted';
+export type OrderStatus = 'pending_pickup' | 'handed_over';
 
 export interface User {
   id: string;
@@ -30,6 +31,24 @@ export interface Snack {
   created_at: string;
 }
 
+export interface OrderItem {
+  snack_id: string | null;
+  snack_name: string;
+  quantity: number;
+}
+
+export interface PantryOrder {
+  id: string;
+  order_code: string;
+  user_id: string;
+  user_name: string;
+  user_email: string;
+  status: OrderStatus;
+  total_items: number;
+  items: OrderItem[];
+  created_at: string;
+}
+
 export interface ActivityItem {
   id: string;
   user_name: string;
@@ -37,6 +56,7 @@ export interface ActivityItem {
   snack_name: string;
   action: ActivityAction;
   amount: number;
+  order_code: string | null;
   created_at: string;
 }
 

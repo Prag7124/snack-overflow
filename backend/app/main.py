@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from app import models  # noqa: F401
 from app.database import Base, engine
 from app.errors import register_exception_handlers
-from app.routers import activity, auth, copilot, events, snacks
+from app.routers import activity, auth, copilot, events, orders, snacks
 
 
 @asynccontextmanager
@@ -35,6 +35,7 @@ app.mount("/uploads", StaticFiles(directory=str(uploads_path)), name="uploads")
 
 app.include_router(auth.router)
 app.include_router(snacks.router)
+app.include_router(orders.router)
 app.include_router(events.router)
 app.include_router(activity.router)
 app.include_router(copilot.router)

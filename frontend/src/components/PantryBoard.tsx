@@ -2,11 +2,15 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, ApiClientError } from '../api';
 import { useAuth } from '../context/AuthContext';
 import { usePantryStream, type SseEventMessage } from '../hooks/usePantryStream';
-import type { Snack, SnackCategory, SnackStatus } from '../types';
+import type { PantryOrder, Snack, SnackCategory, SnackStatus } from '../types';
+import type { TrayItem } from './MemberOrdersDrawer';
 import { SnackCard } from './SnackCard';
 
 interface PantryBoardProps {
   isAdmin: boolean;
+  tray?: TrayItem[];
+  onAddToTray?: (snack: Snack) => void;
+  onOrderCreated?: (order: PantryOrder) => void;
   onEditSnack?: (snack: Snack) => void;
   onDeleteSnack?: (snack: Snack) => void;
   refreshTrigger?: number;
@@ -14,10 +18,10 @@ interface PantryBoardProps {
 
 const CATEGORIES: Array<{ value: SnackCategory | ''; label: string }> = [
   { value: '', label: 'All Categories' },
-  { value: 'sweet', label: '🍪 Sweet' },
-  { value: 'savoury', label: '🥨 Savoury' },
-  { value: 'drink', label: '🥤 Drinks' },
-  { value: 'healthy-ish', label: '🥜 Healthy-ish' },
+  { value: 'sweet', label: 'Sweet' },
+  { value: 'savoury', label: 'Savoury' },
+  { value: 'drink', label: 'Drinks' },
+  { value: 'healthy-ish', label: 'Healthy-ish' },
 ];
 
 const STATUSES: Array<{ value: SnackStatus | ''; label: string }> = [
@@ -29,6 +33,9 @@ const STATUSES: Array<{ value: SnackStatus | ''; label: string }> = [
 
 export function PantryBoard({
   isAdmin,
+  tray = [],
+  onAddToTray,
+  onOrderCreated,
   onEditSnack,
   onDeleteSnack,
   refreshTrigger = 0,
@@ -47,7 +54,7 @@ export function PantryBoard({
 
   useEffect(() => {
     if (!toast) return;
-    const timer = setTimeout(() => setToast(null), 3500);
+    const timer = setTimeout(() => setToast(null), 4000);
     return () => clearTimeout(timer);
   }, [toast]);
 
@@ -89,6 +96,10 @@ export function PantryBoard({
                   ...s,
                   name: (event.data.name as string) ?? s.name,
                   category: (event.data.category as SnackCategory) ?? s.category,
+                  image_url:
+                    event.data.image_url !== undefined
+                      ? (event.data.image_url as string | null)
+                      : s.image_url,
                   quantity:
                     typeof event.data.quantity === 'number' ? event.data.quantity : s.quantity,
                   low_stock_threshold:
@@ -109,9 +120,10 @@ export function PantryBoard({
         const action = event.data.action as string | undefined;
         const snackName = event.data.name as string | undefined;
         const amount = event.data.amount as number | undefined;
+        const orderCode = event.data.order_code as string | undefined;
         if (actor && action && snackName && actor !== user?.name) {
           showToast(
-            `${actor} ${action} ${amount ?? 1} × ${snackName}`
+            `${actor} ${action} ${amount ?? 1} × ${snackName}${orderCode ? ` (${orderCode})` : ''}`
           );
         }
       }
@@ -129,7 +141,7 @@ export function PantryBoard({
     [fetchSnacks, showToast, user?.name]
   );
 
-  const { connected } = usePantryStream(token, handleSseEvent);
+  usePantryStream(token, handleSseEvent);
 
   const filteredSnacks = useMemo(() => {
     return snacks.filter((s) => {
@@ -151,14 +163,15 @@ export function PantryBoard({
     };
   }, [snacks]);
 
-  async function handleConsume(snack: Snack) {
+  async function handleQuickOrder(snack: Snack) {
     if (!token) return;
     try {
-      const updated = await api.consumeSnack(token, snack.id, 1);
-      setSnacks((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
-      showToast(`Grabbed 1 × ${snack.name}`);
+      const order = await api.createOrder(token, [{ snack_id: snack.id, quantity: 1 }]);
+      fetchSnacks();
+      showToast(`Order ${order.order_code} confirmed for 1 × ${snack.name}!`);
+      onOrderCreated?.(order);
     } catch (err) {
-      showToast(err instanceof ApiClientError ? err.message : 'Could not grab snack', 'error');
+      showToast(err instanceof ApiClientError ? err.message : 'Could not place order', 'error');
       fetchSnacks();
     }
   }
@@ -200,8 +213,8 @@ export function PantryBoard({
         </div>
       )}
 
-      {/* KPI Strip + Live SSE Badge */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      {/* Clean 4-Card KPI Strip */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-white rounded-xl border border-slate-200 p-4">
           <p className="text-xs text-slate-500">Total Snacks</p>
           <p className="text-2xl font-bold text-slate-900 mt-1">{counts.total}</p>
@@ -218,19 +231,6 @@ export function PantryBoard({
           <p className="text-xs text-rose-600 font-medium">Gone</p>
           <p className="text-2xl font-bold text-rose-700 mt-1">{counts.gone}</p>
         </div>
-        <div className="col-span-2 sm:col-span-1 bg-white rounded-xl border border-slate-200 p-4 flex flex-col justify-between">
-          <p className="text-xs text-slate-500">Pantry Stream</p>
-          <div className="flex items-center gap-2 mt-1">
-            <span
-              className={`w-2.5 h-2.5 rounded-full ${
-                connected ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'
-              }`}
-            />
-            <span className="text-sm font-bold text-slate-800">
-              {connected ? 'Live SSE' : 'Connecting...'}
-            </span>
-          </div>
-        </div>
       </div>
 
       {/* Unified Search & Filters */}
@@ -240,6 +240,7 @@ export function PantryBoard({
           placeholder="Search snacks by name..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
+          aria-label="Search snacks by name"
           className="flex-1 rounded-lg border border-slate-300 px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
         />
 
@@ -247,6 +248,8 @@ export function PantryBoard({
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value as SnackCategory | '')}
+            aria-label="Filter by snack category"
+            title="Filter snacks by category"
             className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-500"
           >
             {CATEGORIES.map((c) => (
@@ -259,6 +262,8 @@ export function PantryBoard({
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as SnackStatus | '')}
+            aria-label="Filter by stock status"
+            title="Filter snacks by stock status"
             className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-500"
           >
             {STATUSES.map((s) => (
@@ -272,25 +277,30 @@ export function PantryBoard({
 
       {/* Snack Grid */}
       {loading ? (
-        <div className="text-center py-12 text-sm text-slate-500">Loading live pantry...</div>
+        <div className="text-center py-12 text-sm text-slate-500">Loading pantry...</div>
       ) : filteredSnacks.length === 0 ? (
         <div className="bg-white rounded-xl border border-slate-200 p-10 text-center text-sm text-slate-500">
           No snacks match your current filters.
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {filteredSnacks.map((snack) => (
-            <SnackCard
-              key={snack.id}
-              snack={snack}
-              isAdmin={isAdmin}
-              onConsume={handleConsume}
-              onToggleVote={handleToggleVote}
-              onQuickRestock={handleQuickRestock}
-              onEditClick={onEditSnack}
-              onDeleteClick={onDeleteSnack}
-            />
-          ))}
+          {filteredSnacks.map((snack) => {
+            const trayEntry = tray.find((t) => t.snack.id === snack.id);
+            return (
+              <SnackCard
+                key={snack.id}
+                snack={snack}
+                isAdmin={isAdmin}
+                inTrayQty={trayEntry?.quantity ?? 0}
+                onConsume={handleQuickOrder}
+                onAddToTray={onAddToTray}
+                onToggleVote={handleToggleVote}
+                onQuickRestock={handleQuickRestock}
+                onEditClick={onEditSnack}
+                onDeleteClick={onDeleteSnack}
+              />
+            );
+          })}
         </div>
       )}
     </div>

@@ -2,6 +2,8 @@ import type {
   ActivityAction,
   ActivitySummary,
   CopilotResponse,
+  OrderStatus,
+  PantryOrder,
   Snack,
   SnackCategory,
   SnackStatus,
@@ -150,6 +152,24 @@ export const api = {
 
   unvoteSnack: (token: string, id: string) =>
     request<Snack>(`/snacks/${id}/vote`, { method: 'DELETE' }, token),
+
+  createOrder: (token: string, items: Array<{ snack_id: string; quantity: number }>) =>
+    request<PantryOrder>(
+      '/orders',
+      { method: 'POST', body: JSON.stringify({ items }) },
+      token
+    ),
+
+  listOrders: (token: string, params?: { search?: string; status?: OrderStatus | '' }) => {
+    const qs = new URLSearchParams();
+    if (params?.search?.trim()) qs.set('search', params.search.trim());
+    if (params?.status) qs.set('status', params.status);
+    const queryStr = qs.toString();
+    return request<PantryOrder[]>(`/orders${queryStr ? `?${queryStr}` : ''}`, {}, token);
+  },
+
+  handoverOrder: (token: string, orderId: string) =>
+    request<PantryOrder>(`/orders/${orderId}/handover`, { method: 'POST' }, token),
 
   getActivity: (token: string, action?: ActivityAction | '', limit = 50) => {
     const params = new URLSearchParams({ limit: String(limit) });

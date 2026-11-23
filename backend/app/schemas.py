@@ -65,6 +65,34 @@ class SnackOut(BaseModel):
     created_at: datetime
 
 
+# --- Order / Pickup Pass Schemas ---
+class OrderItemInput(BaseModel):
+    snack_id: UUID
+    quantity: int = Field(..., ge=1, le=50)
+
+
+class OrderCreateRequest(BaseModel):
+    items: list[OrderItemInput] = Field(..., min_length=1, max_length=25)
+
+
+class OrderItemOut(BaseModel):
+    snack_id: UUID | None
+    snack_name: str
+    quantity: int
+
+
+class OrderOut(BaseModel):
+    id: UUID
+    order_code: str
+    user_id: UUID
+    user_name: str
+    user_email: str
+    status: Literal["pending_pickup", "handed_over"]
+    total_items: int
+    items: list[OrderItemOut]
+    created_at: datetime
+
+
 # --- Activity Schemas ---
 ActivityAction = Literal["consumed", "restocked", "voted"]
 
@@ -76,6 +104,7 @@ class ActivityOut(BaseModel):
     snack_name: str
     action: ActivityAction
     amount: int
+    order_code: str | None = None
     created_at: datetime
 
 
