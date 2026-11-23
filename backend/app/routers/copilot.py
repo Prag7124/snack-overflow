@@ -328,7 +328,18 @@ async def _call_gemini(prompt: str) -> str | None:
         LAST_GEMINI_STATUS = "missing_key"
         return None
 
-    models_to_try = list(dict.fromkeys([GEMINI_MODEL, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest"]))
+    models_to_try = list(
+        dict.fromkeys(
+            [
+                GEMINI_MODEL,
+                "gemini-2.5-flash",
+                "gemini-2.5-flash-lite",
+                "gemini-2.0-flash-lite",
+                "gemini-2.0-flash",
+                "gemini-flash-latest",
+            ]
+        )
+    )
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {"temperature": 0.25, "maxOutputTokens": 450},
