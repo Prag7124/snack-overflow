@@ -24,7 +24,7 @@ export function TeamModal({ open, onClose }: TeamModalProps) {
     if (!open || !token) return;
     setError(null);
     setSuccessMsg(null);
-    api.listUsers(token).then(setUsers).catch(() => {});
+    api.listUsers(token).then(setUsers).catch((err) => setError(err instanceof ApiClientError ? err.message : "Failed to load team list"));
   }, [open, token]);
 
   if (!open) return null;

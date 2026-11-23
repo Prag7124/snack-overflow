@@ -79,6 +79,12 @@ export function SnackCard({
           <img
             src={imgSrc}
             alt={snack.name}
+            onError={(e) => {
+              const fallback = CATEGORY_FALLBACK_IMG[snack.category];
+              if (e.currentTarget.src !== fallback) {
+                e.currentTarget.src = fallback;
+              }
+            }}
             className="h-full w-full object-cover"
             loading="lazy"
           />

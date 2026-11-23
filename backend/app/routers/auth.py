@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from uuid import UUID
 import jwt
+from dotenv import load_dotenv
 from fastapi import APIRouter, Depends
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
@@ -27,43 +28,53 @@ from app.schemas import (
     UserOut,
 )
 
+load_dotenv()
+
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
 RESET_SECRET = os.getenv("JWT_SECRET", os.getenv("SECRET_KEY", "dev-secret-change-me"))
 RESET_ALGO = "HS256"
 
 
-def _send_reset_email_if_configured(to_email: str, user_name: str, reset_token: str) -> bool:
+def _user_to_out(u: User) -> UserOut:
+    return UserOut(
+        id=u.id,
+        name=u.name,
+        email=u.email,
+        role=u.role,
+        created_at=u.created_at or datetime.now(timezone.utc),
+    )
+
+
+def _send_reset_email(to_email: str, user_name: str, reset_token: str) -> bool:
     smtp_host = os.getenv("SMTP_HOST", "").strip()
     smtp_user = os.getenv("SMTP_USER", "").strip()
     smtp_pass = os.getenv("SMTP_PASS", "").strip()
     smtp_port = int(os.getenv("SMTP_PORT", "587"))
     frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
+    reset_link = f"{frontend_url}/?reset_token={reset_token}"
 
     if not smtp_host or not smtp_user or not smtp_pass:
+        print(f"\n[DEV MAIL] Password reset link for {to_email}: {reset_link}\n")
         return False
 
-    reset_link = f"{frontend_url}/?reset_token={reset_token}"
     msg = EmailMessage()
     msg["Subject"] = "Snack Overflow — Reset Your Pantry Password"
-    msg["From"] = smtp_user
+    msg["From"] = f"Snack Overflow Pantry <{smtp_user}>"
     msg["To"] = to_email
     msg.set_content(
         f"Hi {user_name},\n\n"
-        f"Use the link or reset code below within 15 minutes to set a new Snack Overflow password:\n\n"
-        f"Link: {reset_link}\n"
-        f"Reset Code: {reset_token}\n\n"
-        f"If you did not request this, you can safely ignore this email."
+        f"We received a request to reset your Snack Overflow password.\n"
+        f"Click the link below within 15 minutes to choose a new password:\n\n"
+        f"{reset_link}\n\n"
+        f"If you didn't request this, you can safely ignore this email."
     )
 
-    try:
-        with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
-            server.starttls()
-            server.login(smtp_user, smtp_pass)
-            server.send_message(msg)
-        return True
-    except Exception:
-        return False
+    with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
+        server.starttls()
+        server.login(smtp_user, smtp_pass)
+        server.send_message(msg)
+    return True
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -75,12 +86,12 @@ async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
         raise AppError(401, "INVALID_CREDENTIALS", "Invalid email or password")
 
     token = create_access_token(user)
-    return TokenResponse(access_token=token, user=UserOut.model_validate(user))
+    return TokenResponse(access_token=token, user=_user_to_out(user))
 
 
 @router.get("/me", response_model=UserOut)
 async def me(current_user: User = Depends(get_current_user)):
-    return UserOut.model_validate(current_user)
+    return _user_to_out(current_user)
 
 
 @router.get("/users", response_model=list[UserOut])
@@ -89,7 +100,7 @@ async def list_users(
     db: AsyncSession = Depends(get_db),
 ):
     rows = (await db.execute(select(User).order_by(User.created_at.desc()))).scalars().all()
-    return [UserOut.model_validate(u) for u in rows]
+    return [_user_to_out(u) for u in rows]
 
 
 @router.post("/users", response_model=UserOut, status_code=201)
@@ -116,7 +127,7 @@ async def create_user(
         await db.rollback()
         raise AppError(400, "USER_CREATE_FAILED", f"Database constraint error: {exc.orig}")
 
-    return UserOut.model_validate(new_user)
+    return _user_to_out(new_user)
 
 
 @router.delete("/users/{user_id}", status_code=204)
@@ -160,15 +171,18 @@ async def forgot_password(
         algorithm=RESET_ALGO,
     )
 
-    email_sent = _send_reset_email_if_configured(user.email, user.name, reset_token)
+    try:
+        email_sent = _send_reset_email(user.email, user.name, reset_token)
+    except Exception as exc:
+        raise AppError(502, "EMAIL_SEND_FAILED", f"Failed to send reset email: {exc}")
+
     return {
         "message": (
-            f"Password reset link sent to {user.email}."
+            f"Password reset link sent to {user.email}. Please check your inbox (and spam folder)."
             if email_sent
-            else f"Verified active {user.role} account ({user.email}). Use the reset code below within 15 minutes."
+            else f"SMTP not configured in backend/.env yet — reset link printed to backend terminal for {user.email}."
         ),
         "email_sent": email_sent,
-        "reset_token": reset_token,
     }
 
 
@@ -180,9 +194,9 @@ async def reset_password(
     try:
         decoded = jwt.decode(payload.token.strip(), RESET_SECRET, algorithms=[RESET_ALGO])
     except jwt.ExpiredSignatureError:
-        raise AppError(400, "RESET_TOKEN_EXPIRED", "Reset code has expired. Please request a new one.")
+        raise AppError(400, "RESET_TOKEN_EXPIRED", "Reset link has expired. Please request a new one.")
     except jwt.InvalidTokenError:
-        raise AppError(400, "INVALID_RESET_TOKEN", "Invalid password reset code.")
+        raise AppError(400, "INVALID_RESET_TOKEN", "Invalid password reset link.")
 
     if decoded.get("purpose") != "password_reset":
         raise AppError(400, "INVALID_RESET_TOKEN", "Invalid token purpose.")
