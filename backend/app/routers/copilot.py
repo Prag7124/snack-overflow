@@ -338,8 +338,7 @@ async def _single_gemini_call(
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {
             "temperature": 0.25,
-            "maxOutputTokens": 600,
-            "thinkingConfig": {"thinkingBudget": 0},
+            "maxOutputTokens": 1024,
         },
     }
     try:
@@ -360,7 +359,7 @@ async def _call_gemini(prompt: str) -> str | None:
         LAST_GEMINI_STATUS = "missing_key"
         return None
 
-    models = ["gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-3-flash-preview"]
+    models = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.1-flash-lite-preview"]
     async with httpx.AsyncClient(timeout=12.0) as client:
         results = await asyncio.gather(
             *(_single_gemini_call(client, m, api_key, prompt) for m in models)
@@ -560,7 +559,7 @@ async def ask_copilot(
         q_raw = payload.question.strip()
         q_lower = q_raw.lower()
         last_assistant_msg = next(
-            (turn.text for turn in reversed(payload.history) if turn.role == "assistant"),
+            (turn.text for turn in reversed((getattr(payload, 'history', None) or [])) if turn.role == "assistant"),
             "",
         )
         has_gemini = bool(os.getenv("GEMINI_API_KEY", "").strip())
@@ -755,7 +754,7 @@ async def ask_copilot(
             for s in snacks
         )
         analytics_snapshot = await _build_live_analytics_snapshot(db, role)
-        recent_chat = "\n".join(f"{t.role.upper()}: {t.text}" for t in payload.history[-6:])
+        recent_chat = "\n".join(f"{t.role.upper()}: {t.text}" for t in (getattr(payload, 'history', None) or [])[-6:])
 
         role_instruction = (
             "You are speaking to a Pantry ADMIN. You have access to live inventory, recent orders (with timestamps in mins ago), and member order totals. "
