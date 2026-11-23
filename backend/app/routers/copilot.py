@@ -332,7 +332,11 @@ async def _single_gemini_call(
     }
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.25, "maxOutputTokens": 450},
+        "generationConfig": {
+            "temperature": 0.25,
+            "maxOutputTokens": 600,
+            "thinkingConfig": {"thinkingBudget": 0},
+        },
     }
     try:
         resp = await client.post(url, headers=headers, json=payload)
@@ -353,7 +357,7 @@ async def _call_gemini(prompt: str) -> str | None:
         return None
 
     models = ["gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-3-flash-preview"]
-    async with httpx.AsyncClient(timeout=8.0) as client:
+    async with httpx.AsyncClient(timeout=12.0) as client:
         results = await asyncio.gather(
             *(_single_gemini_call(client, m, api_key, prompt) for m in models)
         )
