@@ -85,4 +85,8 @@ export interface CopilotResponse {
   role_mode: 'admin' | 'member';
   source: 'gemini' | 'smart-fallback';
   recommendations: RestockRecommendation[];
+  action_type?: 'none' | 'order_confirm' | 'order_created' | 'vote_added' | 'restocked' | 'orders_list';
+  pending_order_items?: Array<{ snack_id: string; snack_name: string; quantity: number }>;
+  created_order?: PantryOrder | null;
+  user_orders?: PantryOrder[];
 }

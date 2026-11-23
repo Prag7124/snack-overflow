@@ -154,3 +154,14 @@ class CopilotResponse(BaseModel):
     role_mode: Literal["admin", "member"]
     source: Literal["gemini", "smart-fallback"]
     recommendations: list[RestockRecommendation] = []
+    action_type: Literal[
+        "none",
+        "order_confirm",
+        "order_created",
+        "vote_added",
+        "restocked",
+        "orders_list",
+    ] = "none"
+    pending_order_items: list[OrderItemOut] = []
+    created_order: OrderOut | None = None
+    user_orders: list[OrderOut] = []

@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api, ApiClientError } from '../api';
 import { useAuth } from '../context/AuthContext';
-import type { CopilotResponse, RestockRecommendation } from '../types';
+import type { CopilotResponse, PantryOrder, RestockRecommendation } from '../types';
 
 interface CopilotPanelProps {
   open: boolean;
@@ -10,16 +10,24 @@ interface CopilotPanelProps {
   onRestockApplied: () => void;
 }
 
+interface ChatTurn {
+  id: string;
+  sender: 'user' | 'copilot';
+  text: string;
+  response?: CopilotResponse;
+  confirmedOrder?: PantryOrder | null;
+}
+
 const ADMIN_PROMPTS = [
   'What needs urgent restocking first?',
+  'Show pending pickup orders',
   'Which snacks have the highest team votes?',
-  'Summarize current pantry stock levels',
 ];
 
 const MEMBER_PROMPTS = [
+  'Order 1 Aloo bonda',
   'Which healthy-ish snacks are in stock?',
-  'What sweet or savoury snacks are available?',
-  'What are the most popular snacks?',
+  'Check my pickup passes',
 ];
 
 export function CopilotPanel({
@@ -28,11 +36,14 @@ export function CopilotPanel({
   onClose,
   onRestockApplied,
 }: CopilotPanelProps) {
-  const { token } = useAuth();
-  const [data, setData] = useState<CopilotResponse | null>(null);
+  const { token, user } = useAuth();
+  const [messages, setMessages] = useState<ChatTurn[]>([]);
+  const [latestRecs, setLatestRecs] = useState<RestockRecommendation[]>([]);
+  const [sourceTag, setSourceTag] = useState<'gemini' | 'smart-fallback'>('smart-fallback');
   const [question, setQuestion] = useState('');
   const [loading, setLoading] = useState(false);
   const [asking, setAsking] = useState(false);
+  const [confirmingTurnId, setConfirmingTurnId] = useState<string | null>(null);
   const [restockingId, setRestockingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -46,7 +57,14 @@ export function CopilotPanel({
       setError(null);
       try {
         const res = await api.getRestockPlan(token!);
-        if (active) setData(res);
+        if (!active) return;
+        setLatestRecs(res.recommendations);
+        setSourceTag(res.source);
+        setMessages((prev) =>
+          prev.length === 0
+            ? [{ id: 'welcome', sender: 'copilot', text: res.answer, response: res }]
+            : prev
+        );
       } catch (err) {
         if (active) {
           setError(err instanceof ApiClientError ? err.message : 'Copilot unavailable');
@@ -64,14 +82,27 @@ export function CopilotPanel({
   if (!open) return null;
 
   async function submitQuestion(q: string) {
-    if (!token || !q.trim()) return;
+    if (!token || !q.trim() || asking) return;
+    const trimmed = q.trim();
+    const userTurnId = `u-${Date.now()}`;
+    setMessages((prev) => [...prev, { id: userTurnId, sender: 'user', text: trimmed }]);
     setAsking(true);
     setError(null);
     try {
-      const res = await api.askCopilot(token, q.trim());
-      setData(res);
+      const res = await api.askCopilot(token, trimmed);
+      setSourceTag(res.source);
+      if (res.recommendations && res.recommendations.length > 0) {
+        setLatestRecs(res.recommendations);
+      }
+      if (res.action_type === 'vote_added' || res.action_type === 'restocked') {
+        onRestockApplied();
+      }
+      setMessages((prev) => [
+        ...prev,
+        { id: `c-${Date.now()}`, sender: 'copilot', text: res.answer, response: res },
+      ]);
     } catch (err) {
-      setError(err instanceof ApiClientError ? err.message : 'Could not ask Copilot');
+      setError(err instanceof ApiClientError ? err.message : 'Could not reach Pantry Copilot');
     } finally {
       setAsking(false);
     }
@@ -85,6 +116,29 @@ export function CopilotPanel({
     await submitQuestion(currentQ);
   }
 
+  async function handleConfirmChatOrder(
+    turnId: string,
+    items: Array<{ snack_id: string; snack_name: string; quantity: number }>
+  ) {
+    if (!token || confirmingTurnId) return;
+    setConfirmingTurnId(turnId);
+    setError(null);
+    try {
+      const created = await api.createOrder(
+        token,
+        items.map((i) => ({ snack_id: i.snack_id, quantity: i.quantity }))
+      );
+      setMessages((prev) =>
+        prev.map((m) => (m.id === turnId ? { ...m, confirmedOrder: created } : m))
+      );
+      onRestockApplied();
+    } catch (err) {
+      setError(err instanceof Error && err.message ? err.message : 'Could not place order');
+    } finally {
+      setConfirmingTurnId(null);
+    }
+  }
+
   async function handleApproveRestock(rec: RestockRecommendation) {
     if (!token || restockingId) return;
     setRestockingId(rec.snack_id);
@@ -92,7 +146,15 @@ export function CopilotPanel({
       await api.restockSnack(token, rec.snack_id, rec.suggested_restock_qty);
       onRestockApplied();
       const refreshed = await api.getRestockPlan(token);
-      setData(refreshed);
+      setLatestRecs(refreshed.recommendations);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `r-${Date.now()}`,
+          sender: 'copilot',
+          text: `Restocked ${rec.snack_name} (+${rec.suggested_restock_qty} units). Live pantry inventory updated!`,
+        },
+      ]);
     } catch (err) {
       setError(err instanceof ApiClientError ? err.message : 'Restock failed');
     } finally {
@@ -103,17 +165,23 @@ export function CopilotPanel({
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/35 backdrop-blur-xs">
       <div className="w-full max-w-lg bg-white h-full shadow-2xl border-l border-slate-200 flex flex-col">
+        {/* Header */}
         <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-gradient-to-r from-amber-50 to-orange-50">
           <div className="flex items-center gap-2.5">
             <span className="text-xl">✨</span>
             <div>
-              <h2 className="font-bold text-slate-900 text-base">
-                {isAdmin ? 'Admin Procurement Copilot' : 'Member Snack Concierge'}
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2 className="font-bold text-slate-900 text-base">
+                  {isAdmin ? 'Admin Pantry Copilot' : 'Pantry Assistant'}
+                </h2>
+                <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-white border border-amber-200 text-amber-800">
+                  {sourceTag === 'gemini' ? 'Gemini + Guardrails' : 'Pantry Engine'}
+                </span>
+              </div>
               <p className="text-xs text-slate-500">
                 {isAdmin
-                  ? 'Velocity & upvote-driven restock intelligence'
-                  : 'Live pantry picks & restock request assistant'}
+                  ? 'Ask, check pickups, or restock snacks directly in chat'
+                  : 'Ask about snacks, vote, or order your pickup pass in chat'}
               </p>
             </div>
           </div>
@@ -126,43 +194,128 @@ export function CopilotPanel({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6 space-y-5">
-          <form onSubmit={handleAskForm} className="space-y-2">
-            <div className="flex gap-2">
-              <input
-                type="text"
-                placeholder={
-                  isAdmin
-                    ? 'Ask about restock priorities, votes, or stock levels...'
-                    : 'Ask about available snacks, healthy picks, or favorites...'
+        {/* Conversation & Action Stream */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          {loading && messages.length === 0 ? (
+            <div className="text-center py-10 text-sm text-slate-500">
+              Connecting to live pantry...
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {messages.map((turn) => {
+                if (turn.sender === 'user') {
+                  return (
+                    <div key={turn.id} className="flex justify-end">
+                      <div className="max-w-[82%] rounded-2xl rounded-br-xs bg-slate-900 text-white px-3.5 py-2.5 text-xs leading-relaxed shadow-2xs">
+                        {turn.text}
+                      </div>
+                    </div>
+                  );
                 }
-                value={question}
-                onChange={(e) => setQuestion(e.target.value)}
-                className="flex-1 rounded-lg border border-slate-300 px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-              />
-              <button
-                type="submit"
-                disabled={asking || !question.trim()}
-                className="rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white text-xs font-semibold px-4 py-2 cursor-pointer"
-              >
-                {asking ? '...' : 'Ask'}
-              </button>
-            </div>
 
-            <div className="flex flex-wrap gap-1.5">
-              {quickQuestions.map((q) => (
-                <button
-                  key={q}
-                  type="button"
-                  disabled={asking}
-                  onClick={() => submitQuestion(q)}
-                  className="text-[11px] bg-slate-100 hover:bg-amber-100 text-slate-700 hover:text-amber-900 rounded-full px-2.5 py-1 transition cursor-pointer"
-                >
-                  {q}
-                </button>
-              ))}
+                const pendingItems = turn.response?.pending_order_items ?? [];
+                const userOrders = turn.response?.user_orders ?? [];
+
+                return (
+                  <div key={turn.id} className="space-y-2">
+                    <div className="max-w-[92%] rounded-2xl rounded-bl-xs bg-amber-50/80 border border-amber-200 px-4 py-3 text-xs text-slate-800 leading-relaxed">
+                      {turn.text}
+                    </div>
+
+                    {/* Interactive 1-Click Order Confirmation Card */}
+                    {turn.response?.action_type === 'order_confirm' &&
+                      pendingItems.length > 0 &&
+                      !turn.confirmedOrder && (
+                        <div className="max-w-[92%] rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs space-y-2.5">
+                          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-600">
+                            Ready to Checkout
+                          </p>
+                          <ul className="text-xs text-slate-800 space-y-1">
+                            {pendingItems.map((it) => (
+                              <li key={it.snack_id} className="flex justify-between">
+                                <span>{it.snack_name}</span>
+                                <span className="font-bold">× {it.quantity}</span>
+                              </li>
+                            ))}
+                          </ul>
+                          <button
+                            type="button"
+                            disabled={confirmingTurnId === turn.id}
+                            onClick={() => handleConfirmChatOrder(turn.id, pendingItems)}
+                            className="w-full rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white font-semibold py-2 text-xs transition cursor-pointer"
+                          >
+                            {confirmingTurnId === turn.id
+                              ? 'Generating Pickup Pass...'
+                              : 'Confirm Order & Get Pickup Pass'}
+                          </button>
+                        </div>
+                      )}
+
+                    {/* Confirmed Pickup Pass Receipt inside Copilot */}
+                    {turn.confirmedOrder && (
+                      <div className="max-w-[92%] rounded-xl border-2 border-emerald-500 bg-emerald-50/70 p-3.5 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800">
+                            Pickup Pass Generated
+                          </span>
+                          <span className="text-xs font-extrabold px-2.5 py-0.5 rounded-full bg-emerald-600 text-white">
+                            {turn.confirmedOrder.order_code}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-700">
+                          Ordered by <strong>{user?.name}</strong> — show this code at the pantry!
+                        </p>
+                        <ul className="text-xs bg-white rounded-lg p-2.5 border border-emerald-200 space-y-1">
+                          {turn.confirmedOrder.items.map((it, idx) => (
+                            <li key={idx} className="flex justify-between font-medium">
+                              <span>{it.snack_name}</span>
+                              <span className="font-bold">× {it.quantity}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* Orders / Pending Pickups List inside Copilot */}
+                    {turn.response?.action_type === 'orders_list' && userOrders.length > 0 && (
+                      <div className="max-w-[92%] space-y-2">
+                        {userOrders.map((ord) => (
+                          <div
+                            key={ord.id}
+                            className="rounded-xl border border-slate-200 bg-white p-3 text-xs space-y-1"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-extrabold text-slate-900">
+                                {ord.order_code} {isAdmin ? `• ${ord.user_name}` : ''}
+                              </span>
+                              <span
+                                className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
+                                  ord.status === 'handed_over'
+                                    ? 'bg-slate-100 text-slate-600'
+                                    : 'bg-amber-100 text-amber-800'
+                                }`}
+                              >
+                                {ord.status === 'handed_over' ? 'Picked Up' : 'Ready for Pickup'}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-600">
+                              {ord.items.map((i) => `${i.snack_name} ×${i.quantity}`).join(', ')}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {asking && (
+                <div className="max-w-[70%] rounded-2xl bg-slate-100 px-3.5 py-2 text-xs text-slate-500">
+                  Checking pantry...
+                </div>
+              )}
             </div>
-          </form>
+          )}
 
           {error && (
             <div className="rounded-lg bg-rose-50 border border-rose-200 px-3.5 py-2.5 text-xs text-rose-700">
@@ -170,88 +323,73 @@ export function CopilotPanel({
             </div>
           )}
 
-          {loading ? (
-            <div className="text-center py-10 text-sm text-slate-500">
-              Analyzing live pantry data...
-            </div>
-          ) : (
-            data && (
-              <>
-                <div className="rounded-xl bg-amber-50/70 border border-amber-200 p-4 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold uppercase tracking-wider text-amber-900">
-                      {isAdmin ? 'Restock Briefing' : 'Pantry Guide'}
-                    </span>
-                    <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-white border border-amber-200 text-amber-800">
-                      {data.source === 'gemini' ? 'Gemini 2.5 Flash' : 'Smart Pantry Engine'}
-                    </span>
+          {/* Admin Actionable Restock Queue */}
+          {isAdmin && latestRecs.length > 0 && (
+            <div className="pt-3 border-t border-slate-100 space-y-2.5">
+              <h3 className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                Quick Restock Queue ({latestRecs.length})
+              </h3>
+              {latestRecs.slice(0, 3).map((rec) => (
+                <div
+                  key={rec.snack_id}
+                  className="rounded-xl border border-slate-200 p-3 bg-white flex items-center justify-between gap-2 text-xs"
+                >
+                  <div>
+                    <p className="font-bold text-slate-900">{rec.snack_name}</p>
+                    <p className="text-[11px] text-slate-500">
+                      {rec.current_quantity} left • {rec.vote_count} votes
+                    </p>
                   </div>
-                  <p className="text-sm text-slate-800 leading-relaxed">{data.answer}</p>
+                  <button
+                    type="button"
+                    disabled={restockingId === rec.snack_id}
+                    onClick={() => handleApproveRestock(rec)}
+                    className="rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold px-3 py-1.5 text-xs transition cursor-pointer"
+                  >
+                    {restockingId === rec.snack_id ? '...' : `Order +${rec.suggested_restock_qty}`}
+                  </button>
                 </div>
-
-                <div className="space-y-3">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                    {isAdmin
-                      ? `Actionable Restock Queue (${data.recommendations.length})`
-                      : `Low / Out-of-Stock Items (${data.recommendations.length})`}
-                  </h3>
-
-                  {data.recommendations.length === 0 ? (
-                    <div className="rounded-xl border border-slate-200 p-5 text-center text-xs text-slate-500">
-                      All snacks are comfortably stocked above thresholds!
-                    </div>
-                  ) : (
-                    data.recommendations.map((rec) => (
-                      <div
-                        key={rec.snack_id}
-                        className="rounded-xl border border-slate-200 p-4 bg-white shadow-2xs space-y-2"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <p className="font-bold text-sm text-slate-900">{rec.snack_name}</p>
-                            <p className="text-xs text-slate-500 mt-0.5">{rec.reason}</p>
-                          </div>
-                          <span
-                            className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
-                              rec.priority === 'high'
-                                ? 'bg-rose-100 text-rose-800'
-                                : 'bg-amber-100 text-amber-800'
-                            }`}
-                          >
-                            {rec.priority}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
-                          <span className="text-slate-600">
-                            In stock: <strong>{rec.current_quantity}</strong> &bull; Votes:{' '}
-                            <strong>{rec.vote_count}</strong>
-                          </span>
-
-                          {isAdmin ? (
-                            <button
-                              type="button"
-                              disabled={restockingId === rec.snack_id}
-                              onClick={() => handleApproveRestock(rec)}
-                              className="rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold px-3 py-1.5 text-xs transition cursor-pointer"
-                            >
-                              {restockingId === rec.snack_id
-                                ? 'Restocking...'
-                                : `Order +${rec.suggested_restock_qty}`}
-                            </button>
-                          ) : (
-                            <span className="text-[11px] font-medium text-amber-800">
-                              Upvote on board to request
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </>
-            )
+              ))}
+            </div>
           )}
+        </div>
+
+        {/* Bottom Chat Input + Starter Chips */}
+        <div className="p-4 border-t border-slate-200 bg-slate-50 space-y-2.5">
+          <div className="flex flex-wrap gap-1.5">
+            {quickQuestions.map((q) => (
+              <button
+                key={q}
+                type="button"
+                disabled={asking}
+                onClick={() => submitQuestion(q)}
+                className="text-[11px] bg-white border border-slate-200 hover:border-amber-400 hover:bg-amber-50 text-slate-700 rounded-full px-2.5 py-1 transition cursor-pointer"
+              >
+                {q}
+              </button>
+            ))}
+          </div>
+
+          <form onSubmit={handleAskForm} className="flex gap-2">
+            <input
+              type="text"
+              placeholder={
+                isAdmin
+                  ? "Ask stock, 'Show pending pickups', or 'Restock Aloo bonda by 10'..."
+                  : "Try 'Order 1 Aloo bonda', 'Vote for Cold Coffee', or ask what's available..."
+              }
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              className="flex-1 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+            />
+            <button
+              type="submit"
+              disabled={asking || !question.trim()}
+              className="rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white text-xs font-semibold px-4 py-2 cursor-pointer"
+            >
+              Send
+            </button>
+          </form>
         </div>
       </div>
     </div>
