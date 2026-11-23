@@ -73,7 +73,7 @@ export const api = {
     request<void>(`/auth/users/${userId}`, { method: 'DELETE' }, token),
 
   forgotPassword: (email: string) =>
-    request<{ message: string; email_sent: boolean }>(
+    request<{ message: string; reset_token: string }>(
       '/auth/forgot-password',
       { method: 'POST', body: JSON.stringify({ email }) }
     ),

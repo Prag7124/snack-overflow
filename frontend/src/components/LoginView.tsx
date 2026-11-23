@@ -1,10 +1,10 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { api, ApiClientError } from '../api';
 import { useAuth } from '../context/AuthContext';
 
 export function LoginView() {
   const { login } = useAuth();
-  const [mode, setMode] = useState<'login' | 'forgot' | 'sent' | 'reset'>('login');
+  const [mode, setMode] = useState<'login' | 'forgot' | 'reset'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [resetToken, setResetToken] = useState('');
@@ -13,16 +13,6 @@ export function LoginView() {
   const [error, setError] = useState<string | null>(null);
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-
-  // Open the clean "Set New Password" form only when arriving from the email link (?reset_token=...)
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const tokenParam = params.get('reset_token');
-    if (tokenParam) {
-      setResetToken(tokenParam);
-      setMode('reset');
-    }
-  }, []);
 
   async function handleLoginSubmit(e: FormEvent) {
     e.preventDefault();
@@ -49,8 +39,9 @@ export function LoginView() {
     setSubmitting(true);
     try {
       const res = await api.forgotPassword(email.trim());
+      setResetToken(res.reset_token);
       setInfoMsg(res.message);
-      setMode('sent');
+      setMode('reset');
     } catch (err) {
       setError(
         err instanceof ApiClientError
@@ -81,7 +72,6 @@ export function LoginView() {
       setConfirmPassword('');
       setResetToken('');
       setMode('login');
-      window.history.replaceState({}, '', window.location.pathname);
     } catch (err) {
       setError(
         err instanceof ApiClientError ? err.message : 'Could not reset password.'
@@ -103,9 +93,7 @@ export function LoginView() {
             {mode === 'login'
               ? 'Real-time office pantry inventory & AI restock copilot'
               : mode === 'forgot'
-              ? 'Enter your active workspace email to receive a reset link'
-              : mode === 'sent'
-              ? 'Check your email inbox to continue'
+              ? 'Verify your active workspace email to reset your password'
               : 'Choose your new Snack Overflow password'}
           </p>
         </div>
@@ -202,7 +190,7 @@ export function LoginView() {
               disabled={submitting}
               className="w-full rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white font-semibold py-2.5 text-sm transition cursor-pointer"
             >
-              {submitting ? 'Sending Reset Link...' : 'Send Password Reset Email'}
+              {submitting ? 'Verifying Account...' : 'Verify & Continue'}
             </button>
 
             <button
@@ -218,32 +206,14 @@ export function LoginView() {
           </form>
         )}
 
-        {mode === 'sent' && (
-          <div className="space-y-4 text-center">
-            <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-4 text-xs text-emerald-900 space-y-1.5">
-              <p className="font-bold text-sm">📬 Reset Link Sent</p>
-              <p>{infoMsg}</p>
-              <p className="text-[11px] text-emerald-700 pt-1">
-                Open the link in your email within 15 minutes to set your new password.
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => {
-                setMode('login');
-                setError(null);
-                setInfoMsg(null);
-              }}
-              className="w-full rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold py-2.5 text-xs transition cursor-pointer"
-            >
-              ← Back to Sign In
-            </button>
-          </div>
-        )}
-
         {mode === 'reset' && (
           <form onSubmit={handleResetSubmit} className="space-y-4">
+            {infoMsg && (
+              <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 text-xs text-emerald-800">
+                {infoMsg}
+              </div>
+            )}
+
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600 mb-1">
                 New Password (min 6 chars)
@@ -293,7 +263,7 @@ export function LoginView() {
               onClick={() => {
                 setMode('login');
                 setError(null);
-                window.history.replaceState({}, '', window.location.pathname);
+                setResetToken('');
               }}
               className="w-full text-xs text-slate-500 hover:text-slate-900 cursor-pointer"
             >

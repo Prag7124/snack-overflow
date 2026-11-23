@@ -1,7 +1,5 @@
 import os
-import smtplib
 from datetime import datetime, timedelta, timezone
-from email.message import EmailMessage
 from uuid import UUID
 import jwt
 from dotenv import load_dotenv
@@ -44,37 +42,6 @@ def _user_to_out(u: User) -> UserOut:
         role=u.role,
         created_at=u.created_at or datetime.now(timezone.utc),
     )
-
-
-def _send_reset_email(to_email: str, user_name: str, reset_token: str) -> bool:
-    smtp_host = os.getenv("SMTP_HOST", "").strip()
-    smtp_user = os.getenv("SMTP_USER", "").strip()
-    smtp_pass = os.getenv("SMTP_PASS", "").strip()
-    smtp_port = int(os.getenv("SMTP_PORT", "587"))
-    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
-    reset_link = f"{frontend_url}/?reset_token={reset_token}"
-
-    if not smtp_host or not smtp_user or not smtp_pass:
-        print(f"\n[DEV MAIL] Password reset link for {to_email}: {reset_link}\n")
-        return False
-
-    msg = EmailMessage()
-    msg["Subject"] = "Snack Overflow — Reset Your Pantry Password"
-    msg["From"] = f"Snack Overflow Pantry <{smtp_user}>"
-    msg["To"] = to_email
-    msg.set_content(
-        f"Hi {user_name},\n\n"
-        f"We received a request to reset your Snack Overflow password.\n"
-        f"Click the link below within 15 minutes to choose a new password:\n\n"
-        f"{reset_link}\n\n"
-        f"If you didn't request this, you can safely ignore this email."
-    )
-
-    with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
-        server.starttls()
-        server.login(smtp_user, smtp_pass)
-        server.send_message(msg)
-    return True
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -157,6 +124,7 @@ async def forgot_password(
     res = await db.execute(select(User).where(User.email == clean_email))
     user = res.scalar_one_or_none()
 
+    # Strict active-account check: removed ex-employees or unknown emails are blocked
     if not user:
         raise AppError(
             404,
@@ -171,18 +139,9 @@ async def forgot_password(
         algorithm=RESET_ALGO,
     )
 
-    try:
-        email_sent = _send_reset_email(user.email, user.name, reset_token)
-    except Exception as exc:
-        raise AppError(502, "EMAIL_SEND_FAILED", f"Failed to send reset email: {exc}")
-
     return {
-        "message": (
-            f"Password reset link sent to {user.email}. Please check your inbox (and spam folder)."
-            if email_sent
-            else f"SMTP not configured in backend/.env yet — reset link printed to backend terminal for {user.email}."
-        ),
-        "email_sent": email_sent,
+        "message": f"Account verified for {user.name} ({user.email}). Set your new password below.",
+        "reset_token": reset_token,
     }
 
 
@@ -194,9 +153,9 @@ async def reset_password(
     try:
         decoded = jwt.decode(payload.token.strip(), RESET_SECRET, algorithms=[RESET_ALGO])
     except jwt.ExpiredSignatureError:
-        raise AppError(400, "RESET_TOKEN_EXPIRED", "Reset link has expired. Please request a new one.")
+        raise AppError(400, "RESET_TOKEN_EXPIRED", "Reset session has expired. Please verify your email again.")
     except jwt.InvalidTokenError:
-        raise AppError(400, "INVALID_RESET_TOKEN", "Invalid password reset link.")
+        raise AppError(400, "INVALID_RESET_TOKEN", "Invalid password reset session.")
 
     if decoded.get("purpose") != "password_reset":
         raise AppError(400, "INVALID_RESET_TOKEN", "Invalid token purpose.")
