@@ -1,3 +1,4 @@
+import asyncio
 import os
 import re
 from datetime import datetime, timedelta, timezone
@@ -321,6 +322,29 @@ async def _build_live_analytics_snapshot(db: AsyncSession, role: str) -> str:
 LAST_GEMINI_STATUS = "not_called"
 
 
+async def _single_gemini_call(
+    client: httpx.AsyncClient, model_name: str, api_key: str, prompt: str
+) -> tuple[str | None, str]:
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+    headers = {
+        "Content-Type": "application/json",
+        "x-goog-api-key": api_key,
+    }
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0.25, "maxOutputTokens": 450},
+    }
+    try:
+        resp = await client.post(url, headers=headers, json=payload)
+        if resp.status_code == 200:
+            data = resp.json()
+            text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+            return text, f"ok:{model_name}"
+        return None, f"http_{resp.status_code}:{model_name}:{resp.text[:120]}"
+    except Exception as exc:
+        return None, f"error:{model_name}:{type(exc).__name__}"
+
+
 async def _call_gemini(prompt: str) -> str | None:
     global LAST_GEMINI_STATUS
     api_key = os.getenv("GEMINI_API_KEY", "").strip().strip('"').strip("'")
@@ -328,49 +352,18 @@ async def _call_gemini(prompt: str) -> str | None:
         LAST_GEMINI_STATUS = "missing_key"
         return None
 
-    models_to_try = list(
-        dict.fromkeys(
-            [
-                GEMINI_MODEL,
-                "gemini-2.5-flash",
-                "gemini-2.5-flash-lite",
-                "gemini-2.0-flash",
-            ]
+    models = ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash"]
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        results = await asyncio.gather(
+            *(_single_gemini_call(client, m, api_key, prompt) for m in models)
         )
-    )
-    # AQ.* keys use Vertex AI Express Mode endpoint; AIza* keys use Google AI Studio endpoint
-    if api_key.startswith("AQ."):
-        base_urls = [
-            "https://aiplatform.googleapis.com/v1/publishers/google/models/{model}:generateContent",
-            "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
-        ]
-    else:
-        base_urls = [
-            "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
-            "https://aiplatform.googleapis.com/v1/publishers/google/models/{model}:generateContent",
-        ]
-
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.25, "maxOutputTokens": 450},
-    }
-    attempts: list[str] = []
-    async with httpx.AsyncClient(timeout=7.0) as client:
-        for base in base_urls:
-            host_tag = "vertex" if "aiplatform" in base else "aistudio"
-            for model_name in models_to_try:
-                url = f"{base.format(model=model_name)}?key={api_key}"
-                try:
-                    resp = await client.post(url, json=payload)
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-                        LAST_GEMINI_STATUS = f"ok:{host_tag}:{model_name}"
-                        return text
-                    attempts.append(f"{host_tag}:{model_name}:http_{resp.status_code}")
-                except Exception as exc:
-                    attempts.append(f"{host_tag}:{model_name}:{type(exc).__name__}")
-    LAST_GEMINI_STATUS = " | ".join(attempts[:4])
+    statuses: list[str] = []
+    for text, status in results:
+        if text:
+            LAST_GEMINI_STATUS = status
+            return text
+        statuses.append(status)
+    LAST_GEMINI_STATUS = " | ".join(statuses)
     return None
 
 
