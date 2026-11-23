@@ -1,3 +1,4 @@
+import { resolveImageUrl } from '../api';
 import { useState } from 'react';
 import type { Snack } from '../types';
 
