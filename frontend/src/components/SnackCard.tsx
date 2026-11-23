@@ -50,7 +50,7 @@ export function SnackCard({
   const [busyAction, setBusyAction] = useState<'vote' | 'restock' | null>(null);
   const [restockQty, setRestockQty] = useState<number>(10);
   const style = STATUS_STYLES[snack.status];
-  const imgSrc = snack.image_url || CATEGORY_FALLBACK_IMG[snack.category];
+  const imgSrc = resolveImageUrl(snack.image_url) || CATEGORY_FALLBACK_IMG[snack.category];
 
   async function handleVote() {
     if (busyAction) return;

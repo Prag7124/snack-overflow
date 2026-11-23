@@ -1,14 +1,14 @@
 import os
 from pathlib import Path
 from uuid import UUID, uuid4
-from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Query, Response, UploadFile
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import get_current_user, require_admin
 from app.database import get_db
 from app.errors import AppError
-from app.models import Activity, Snack, User, Vote
+from app.models import Activity, Snack, SnackImage, User, Vote
 from app.schemas import (
     SnackCategory,
     SnackCreate,
@@ -59,6 +59,7 @@ async def _serialize_snack(
 async def upload_snack_image(
     file: UploadFile = File(...),
     admin_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
 ):
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in ALLOWED_EXTENSIONS:
@@ -71,10 +72,36 @@ async def upload_snack_image(
     if len(content) > 5 * 1024 * 1024:
         raise AppError(400, "IMAGE_TOO_LARGE", "Image must be smaller than 5 MB")
 
-    filename = f"{uuid4().hex}{ext}"
-    dest = UPLOAD_DIR / filename
-    dest.write_bytes(content)
-    return {"image_url": f"http://127.0.0.1:8000/uploads/{filename}"}
+    content_type = file.content_type or {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+        ".gif": "image/gif",
+    }.get(ext, "application/octet-stream")
+
+    img = SnackImage(
+        filename=file.filename or f"{uuid4().hex}{ext}",
+        content_type=content_type,
+        data=content,
+    )
+    db.add(img)
+    await db.commit()
+    await db.refresh(img)
+    return {"image_url": f"/snacks/images/{img.id}"}
+
+
+@router.get("/images/{image_id}")
+async def get_snack_image(image_id: UUID, db: AsyncSession = Depends(get_db)):
+    res = await db.execute(select(SnackImage).where(SnackImage.id == image_id))
+    img = res.scalar_one_or_none()
+    if not img:
+        raise AppError(404, "IMAGE_NOT_FOUND", "Snack image not found")
+    return Response(
+        content=img.data,
+        media_type=img.content_type,
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
 
 
 @router.get("", response_model=list[SnackOut])

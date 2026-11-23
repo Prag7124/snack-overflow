@@ -13,6 +13,17 @@ import type {
 
 export const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
 
+export function resolveImageUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  if (url.startsWith('http://127.0.0.1:8000/')) {
+    return `${API_BASE}${url.slice('http://127.0.0.1:8000'.length)}`;
+  }
+  if (url.startsWith('/')) {
+    return `${API_BASE}${url}`;
+  }
+  return url;
+}
+
 export class ApiClientError extends Error {
   code: string;
   status: number;

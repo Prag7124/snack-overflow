@@ -1,5 +1,5 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
-import { api, ApiClientError } from '../api';
+import { api, ApiClientError, resolveImageUrl } from '../api';
 import { useAuth } from '../context/AuthContext';
 import type { Snack, SnackCategory } from '../types';
 
@@ -126,7 +126,7 @@ export function SnackFormModal({
             <div className="flex items-center gap-3">
               {imageUrl ? (
                 <img
-                  src={imageUrl}
+                  src={resolveImageUrl(imageUrl) || ''}
                   alt="Preview"
                   className="w-16 h-16 rounded-lg object-cover border border-slate-200 shrink-0"
                 />
