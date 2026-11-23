@@ -33,6 +33,15 @@ class CreateUserRequest(BaseModel):
     password: str = Field(..., min_length=6, max_length=100)
     role: Literal["admin", "member"] = "member"
 
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(..., min_length=10)
+    new_password: str = Field(..., min_length=6, max_length=100)
+
 # --- Snack Schemas ---
 SnackCategory = Literal["sweet", "savoury", "drink", "healthy-ish"]
 SnackStatus = Literal["stocked", "running_low", "gone"]

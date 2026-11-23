@@ -9,13 +9,14 @@ interface TeamModalProps {
 }
 
 export function TeamModal({ open, onClose }: TeamModalProps) {
-  const { token } = useAuth();
+  const { token, user: currentUser } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<UserRole>('member');
   const [submitting, setSubmitting] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
@@ -54,6 +55,29 @@ export function TeamModal({ open, onClose }: TeamModalProps) {
     }
   }
 
+  async function handleDeleteUser(target: User) {
+    if (!token || deletingId) return;
+    if (
+      !window.confirm(
+        `Remove ${target.name} (${target.email}) from Snack Overflow? They will immediately lose login and password-reset access.`
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    setSuccessMsg(null);
+    setDeletingId(target.id);
+    try {
+      await api.deleteUser(token, target.id);
+      setUsers((prev) => prev.filter((u) => u.id !== target.id));
+      setSuccessMsg(`Removed ${target.name} (${target.email}). Access revoked immediately.`);
+    } catch (err) {
+      setError(err instanceof ApiClientError ? err.message : 'Could not remove user');
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs px-4">
       <div className="w-full max-w-lg bg-white rounded-2xl border border-slate-200 shadow-xl p-6 max-h-[90vh] overflow-y-auto space-y-5">
@@ -61,7 +85,7 @@ export function TeamModal({ open, onClose }: TeamModalProps) {
           <div>
             <h2 className="text-lg font-bold text-slate-900">Manage Team Members &amp; Admins</h2>
             <p className="text-xs text-slate-500">
-              Add employees so they can log in, order snacks, and test live concurrency
+              Add new employees or remove ex-employees to revoke pantry access immediately
             </p>
           </div>
           <button
@@ -122,7 +146,7 @@ export function TeamModal({ open, onClose }: TeamModalProps) {
 
             <div>
               <label className="block text-[11px] font-semibold uppercase text-slate-600 mb-1">
-                Password (min 6 chars)
+                Initial Password (min 6 chars)
               </label>
               <input
                 type="text"
@@ -161,23 +185,46 @@ export function TeamModal({ open, onClose }: TeamModalProps) {
             Active Accounts ({users.length})
           </h3>
           <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
-            {users.map((u) => (
-              <div key={u.id} className="px-3.5 py-2.5 flex items-center justify-between text-xs">
-                <div>
-                  <p className="font-semibold text-slate-900">{u.name}</p>
-                  <p className="text-[11px] text-slate-500">{u.email}</p>
+            {users.map((u) => {
+              const isSelf = currentUser?.id === u.id;
+              return (
+                <div key={u.id} className="px-3.5 py-2.5 flex items-center justify-between gap-2 text-xs">
+                  <div>
+                    <p className="font-semibold text-slate-900">
+                      {u.name}{' '}
+                      {isSelf && (
+                        <span className="text-[10px] font-normal text-slate-400">(You)</span>
+                      )}
+                    </p>
+                    <p className="text-[11px] text-slate-500">{u.email}</p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
+                        u.role === 'admin'
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-slate-100 text-slate-700'
+                      }`}
+                    >
+                      {u.role}
+                    </span>
+
+                    {!isSelf && (
+                      <button
+                        type="button"
+                        disabled={deletingId === u.id}
+                        onClick={() => handleDeleteUser(u)}
+                        title={`Remove ${u.name} from the company workspace`}
+                        className="rounded-md bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-2 py-1 text-[11px] font-semibold transition cursor-pointer"
+                      >
+                        {deletingId === u.id ? 'Removing...' : 'Remove'}
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <span
-                  className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
-                    u.role === 'admin'
-                      ? 'bg-amber-100 text-amber-800'
-                      : 'bg-slate-100 text-slate-700'
-                  }`}
-                >
-                  {u.role}
-                </span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>

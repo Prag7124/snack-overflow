@@ -69,6 +69,21 @@ export const api = {
 
   listUsers: (token: string) => request<User[]>('/auth/users', {}, token),
 
+  deleteUser: (token: string, userId: string) =>
+    request<void>(`/auth/users/${userId}`, { method: 'DELETE' }, token),
+
+  forgotPassword: (email: string) =>
+    request<{ message: string; email_sent: boolean; reset_token: string }>(
+      '/auth/forgot-password',
+      { method: 'POST', body: JSON.stringify({ email }) }
+    ),
+
+  resetPassword: (token: string, new_password: string) =>
+    request<{ message: string }>(
+      '/auth/reset-password',
+      { method: 'POST', body: JSON.stringify({ token, new_password }) }
+    ),
+
   createUser: (
     token: string,
     data: { name: string; email: string; password: string; role: 'admin' | 'member' }
