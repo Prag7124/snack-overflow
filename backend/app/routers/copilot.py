@@ -334,33 +334,43 @@ async def _call_gemini(prompt: str) -> str | None:
                 GEMINI_MODEL,
                 "gemini-2.5-flash",
                 "gemini-2.5-flash-lite",
-                "gemini-2.0-flash-lite",
                 "gemini-2.0-flash",
-                "gemini-flash-latest",
             ]
         )
     )
-    headers = {
-        "Content-Type": "application/json",
-        "x-goog-api-key": api_key,
-    }
+    # AQ.* keys use Vertex AI Express Mode endpoint; AIza* keys use Google AI Studio endpoint
+    if api_key.startswith("AQ."):
+        base_urls = [
+            "https://aiplatform.googleapis.com/v1/publishers/google/models/{model}:generateContent",
+            "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+        ]
+    else:
+        base_urls = [
+            "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+            "https://aiplatform.googleapis.com/v1/publishers/google/models/{model}:generateContent",
+        ]
+
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {"temperature": 0.25, "maxOutputTokens": 450},
     }
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        for model_name in models_to_try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
-            try:
-                resp = await client.post(url, headers=headers, json=payload)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-                    LAST_GEMINI_STATUS = f"ok:{model_name}"
-                    return text
-                LAST_GEMINI_STATUS = f"http_{resp.status_code}:{model_name}:{resp.text[:140]}"
-            except Exception as exc:
-                LAST_GEMINI_STATUS = f"error:{model_name}:{type(exc).__name__}"
+    attempts: list[str] = []
+    async with httpx.AsyncClient(timeout=7.0) as client:
+        for base in base_urls:
+            host_tag = "vertex" if "aiplatform" in base else "aistudio"
+            for model_name in models_to_try:
+                url = f"{base.format(model=model_name)}?key={api_key}"
+                try:
+                    resp = await client.post(url, json=payload)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                        LAST_GEMINI_STATUS = f"ok:{host_tag}:{model_name}"
+                        return text
+                    attempts.append(f"{host_tag}:{model_name}:http_{resp.status_code}")
+                except Exception as exc:
+                    attempts.append(f"{host_tag}:{model_name}:{type(exc).__name__}")
+    LAST_GEMINI_STATUS = " | ".join(attempts[:4])
     return None
 
 
