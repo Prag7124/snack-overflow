@@ -352,7 +352,7 @@ async def _call_gemini(prompt: str) -> str | None:
         LAST_GEMINI_STATUS = "missing_key"
         return None
 
-    models = ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash"]
+    models = ["gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-3-flash-preview"]
     async with httpx.AsyncClient(timeout=8.0) as client:
         results = await asyncio.gather(
             *(_single_gemini_call(client, m, api_key, prompt) for m in models)
