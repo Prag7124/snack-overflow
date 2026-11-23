@@ -61,8 +61,12 @@ async function request<T>(
   const body = await res.json().catch(() => null);
 
   if (!res.ok) {
-    const code = body?.error?.code || 'HTTP_ERROR';
-    const message = body?.error?.message || `Request failed with status ${res.status}`;
+    const code = body?.error?.code || body?.detail?.code || 'HTTP_ERROR';
+    const message =
+      body?.error?.message ||
+      body?.detail?.message ||
+      (typeof body?.detail === 'string' ? body.detail : null) ||
+      `Request failed with status ${res.status}`;
     throw new ApiClientError(res.status, code, message);
   }
 
