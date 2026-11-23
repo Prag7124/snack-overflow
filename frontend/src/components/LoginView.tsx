@@ -5,15 +5,14 @@ import { useAuth } from '../context/AuthContext';
 export function LoginView() {
   const { login } = useAuth();
   const [mode, setMode] = useState<'login' | 'forgot' | 'reset'>('login');
-  const [email, setEmail] = useState('member@snackoverflow.dev');
-  const [password, setPassword] = useState('member123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [resetToken, setResetToken] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // Support clicking ?reset_token=... directly from email
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const tokenParam = params.get('reset_token');
@@ -70,7 +69,7 @@ export function LoginView() {
     try {
       const res = await api.resetPassword(resetToken, newPassword);
       setInfoMsg(res.message);
-      setPassword(newPassword);
+      setPassword('');
       setNewPassword('');
       setMode('login');
       window.history.replaceState({}, '', window.location.pathname);
@@ -81,14 +80,6 @@ export function LoginView() {
     } finally {
       setSubmitting(false);
     }
-  }
-
-  function fillDemo(demoEmail: string, demoPass: string) {
-    setMode('login');
-    setEmail(demoEmail);
-    setPassword(demoPass);
-    setError(null);
-    setInfoMsg(null);
   }
 
   return (
@@ -109,88 +100,68 @@ export function LoginView() {
         </div>
 
         {mode === 'login' && (
-          <>
-            <form onSubmit={handleLoginSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600 mb-1">
-                  Workspace Email
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-                />
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
-                    Password
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMode('forgot');
-                      setError(null);
-                      setInfoMsg(null);
-                    }}
-                    className="text-xs font-medium text-amber-800 hover:underline cursor-pointer"
-                  >
-                    Forgot password?
-                  </button>
-                </div>
-                <input
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-                />
-              </div>
-
-              {infoMsg && (
-                <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 text-xs text-emerald-800">
-                  {infoMsg}
-                </div>
-              )}
-
-              {error && (
-                <div className="rounded-lg bg-rose-50 border border-rose-200 px-3.5 py-2.5 text-xs text-rose-700">
-                  {error}
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={submitting}
-                className="w-full rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white font-semibold py-2.5 text-sm transition cursor-pointer"
-              >
-                {submitting ? 'Signing in...' : 'Sign In'}
-              </button>
-            </form>
-
-            <div className="pt-2 border-t border-slate-100">
-              <p className="text-xs text-slate-400 text-center mb-2.5">Quick Demo Accounts</p>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => fillDemo('member@snackoverflow.dev', 'member123')}
-                  className="text-xs py-2 px-3 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700 font-medium cursor-pointer"
-                >
-                  👤 Member Demo
-                </button>
-                <button
-                  type="button"
-                  onClick={() => fillDemo('admin@snackoverflow.dev', 'admin123')}
-                  className="text-xs py-2 px-3 rounded-lg border border-amber-200 bg-amber-50/60 hover:bg-amber-100/70 text-amber-900 font-medium cursor-pointer"
-                >
-                  🛡️ Admin Demo
-                </button>
-              </div>
+          <form onSubmit={handleLoginSubmit} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600 mb-1">
+                Workspace Email
+              </label>
+              <input
+                type="email"
+                required
+                placeholder="you@snackoverflow.dev"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+              />
             </div>
-          </>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                  Password
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('forgot');
+                    setError(null);
+                    setInfoMsg(null);
+                  }}
+                  className="text-xs font-medium text-amber-800 hover:underline cursor-pointer"
+                >
+                  Forgot password?
+                </button>
+              </div>
+              <input
+                type="password"
+                required
+                placeholder="Enter your password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+              />
+            </div>
+
+            {infoMsg && (
+              <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 text-xs text-emerald-800">
+                {infoMsg}
+              </div>
+            )}
+
+            {error && (
+              <div className="rounded-lg bg-rose-50 border border-rose-200 px-3.5 py-2.5 text-xs text-rose-700">
+                {error}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white font-semibold py-2.5 text-sm transition cursor-pointer"
+            >
+              {submitting ? 'Signing in...' : 'Sign In'}
+            </button>
+          </form>
         )}
 
         {mode === 'forgot' && (
