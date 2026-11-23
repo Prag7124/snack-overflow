@@ -517,19 +517,6 @@ async def get_restock_plan(
             "Give a sharp 2-3 sentence procurement & restock briefing based ONLY on this live data:\n"
             + ("\n".join(summary_lines) or "All snacks are well-stocked.")
         )
-        stock_lines = [
-            f"- {s.name} ({s.category}): {s.quantity} left, {votes_map.get(s.id, 0)} votes, status={s.status}"
-            for s in snacks
-        ]
-        prompt = (
-            "You are Snack Overflow's Pantry Copilot. Use ONLY the live pantry inventory below.\n"
-            "Rules: Answer concisely and helpfully (use Markdown tables when asked). "
-            "If the user asks about anything unrelated to office pantry snacks, drinks, votes, orders, or restocking, politely decline in 1 sentence.\n"
-            f"User role: {role}\n"
-            "Live Inventory:\n" + "\n".join(stock_lines) + "\n"
-            f"User message: {q_raw}"
-        )
-
         ai_answer = await _call_gemini(prompt)
         if ai_answer:
             return CopilotResponse(answer=ai_answer, role_mode="admin", source="gemini", recommendations=recs)
@@ -601,7 +588,7 @@ async def ask_copilot(
             )
 
         # 2. Strict Domain & Security Guardrail
-        if False and not _is_domain_allowed(q_lower, snacks, has_recent_context=bool(last_assistant_msg)):
+        if not _is_domain_allowed(q_lower, snacks, has_recent_context=bool(last_assistant_msg)):
             return CopilotResponse(
                 answer=REFUSAL_MSG,
                 role_mode=role,
