@@ -1,18 +1,15 @@
-# Secrets & Environment
-.env
-**/.env
-
-# Python
-venv/
-**/venv/
-__pycache__/
-**/__pycache__/
+# Python / Backend
+backend/venv/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/.env
 *.pyc
-.pytest_cache/
 
 # Node / Frontend
-node_modules/
-dist/
+frontend/node_modules/
+frontend/dist/
 
-# macOS
+# OS / Editor
 .DS_Store
+.vscode/
+.idea/
