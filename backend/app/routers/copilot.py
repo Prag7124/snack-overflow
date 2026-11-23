@@ -359,17 +359,22 @@ async def _call_gemini(prompt: str) -> str | None:
         LAST_GEMINI_STATUS = "missing_key"
         return None
 
-    models = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.1-flash-lite-preview"]
-    async with httpx.AsyncClient(timeout=12.0) as client:
-        results = await asyncio.gather(
-            *(_single_gemini_call(client, m, api_key, prompt) for m in models)
-        )
+    models = ["gemini-3.1-flash-lite", "gemini-3.1-flash-lite-preview"]
     statuses: list[str] = []
-    for text, status in results:
-        if text:
-            LAST_GEMINI_STATUS = status
-            return text
-        statuses.append(status)
+    async with httpx.AsyncClient(timeout=5.5) as client:
+        tasks = [
+            asyncio.create_task(_single_gemini_call(client, m, api_key, prompt))
+            for m in models
+        ]
+        for done in asyncio.as_completed(tasks):
+            text, status = await done
+            if text:
+                LAST_GEMINI_STATUS = status
+                for t in tasks:
+                    if not t.done():
+                        t.cancel()
+                return text
+            statuses.append(status)
     LAST_GEMINI_STATUS = " | ".join(statuses)
     return None
 
