@@ -3,6 +3,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 from app import models  # noqa: F401
 from app.database import Base, engine
 from app.errors import register_exception_handlers
@@ -12,6 +13,27 @@ from app.routers import activity, auth, copilot, events, orders, snacks
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
+        await conn.execute(text("""
+            DO $$ BEGIN
+                CREATE TYPE user_role_enum AS ENUM ('admin', 'member');
+            EXCEPTION
+                WHEN duplicate_object THEN null;
+            END $$;
+        """))
+        await conn.execute(text("""
+            DO $$ BEGIN
+                CREATE TYPE snack_category_enum AS ENUM ('sweet', 'savoury', 'drink', 'healthy-ish');
+            EXCEPTION
+                WHEN duplicate_object THEN null;
+            END $$;
+        """))
+        await conn.execute(text("""
+            DO $$ BEGIN
+                CREATE TYPE activity_action_enum AS ENUM ('consumed', 'restocked', 'voted');
+            EXCEPTION
+                WHEN duplicate_object THEN null;
+            END $$;
+        """))
         await conn.run_sync(Base.metadata.create_all)
     yield
     await engine.dispose()

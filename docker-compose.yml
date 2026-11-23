@@ -1,0 +1,48 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: snack_overflow_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-snack_overflow}
+      POSTGRES_USER: ${POSTGRES_USER:-snack_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-snack_secret_pass}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-snack_admin} -d ${POSTGRES_DB:-snack_overflow}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: snack_overflow_api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-snack_admin}:${POSTGRES_PASSWORD:-snack_secret_pass}@db:5432/${POSTGRES_DB:-snack_overflow}
+      JWT_SECRET: ${JWT_SECRET:-change_this_to_a_long_random_64_char_secret_key}
+    volumes:
+      - uploads_data:/app/uploads
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: /api
+    container_name: snack_overflow_web
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+
+volumes:
+  pg_data:
+  uploads_data:

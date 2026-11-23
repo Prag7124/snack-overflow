@@ -11,7 +11,7 @@ import type {
   User,
 } from './types';
 
-export const API_BASE = 'http://127.0.0.1:8000';
+export const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
 
 export class ApiClientError extends Error {
   code: string;
