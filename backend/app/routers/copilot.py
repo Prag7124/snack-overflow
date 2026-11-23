@@ -6,6 +6,7 @@ from uuid import UUID
 import httpx
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, select, update
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import get_current_user
 from app.database import get_db
@@ -279,6 +280,7 @@ async def _build_live_analytics_snapshot(db: AsyncSession, role: str) -> str:
     recent_orders = (
         await db.execute(
             select(Order, User)
+            .options(selectinload(Order.items))
             .join(User, Order.user_id == User.id)
             .order_by(Order.created_at.desc())
             .limit(40)
