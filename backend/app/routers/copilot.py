@@ -340,15 +340,19 @@ async def _call_gemini(prompt: str) -> str | None:
             ]
         )
     )
+    headers = {
+        "Content-Type": "application/json",
+        "x-goog-api-key": api_key,
+    }
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {"temperature": 0.25, "maxOutputTokens": 450},
     }
     async with httpx.AsyncClient(timeout=15.0) as client:
         for model_name in models_to_try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
             try:
-                resp = await client.post(url, json=payload)
+                resp = await client.post(url, headers=headers, json=payload)
                 if resp.status_code == 200:
                     data = resp.json()
                     text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
