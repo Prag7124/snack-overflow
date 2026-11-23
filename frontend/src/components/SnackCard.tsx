@@ -5,7 +5,6 @@ interface SnackCardProps {
   snack: Snack;
   isAdmin: boolean;
   inTrayQty?: number;
-  onConsume: (snack: Snack) => Promise<void>;
   onAddToTray?: (snack: Snack) => void;
   onToggleVote: (snack: Snack) => Promise<void>;
   onQuickRestock: (snack: Snack, amount: number) => Promise<void>;
@@ -42,27 +41,16 @@ export function SnackCard({
   snack,
   isAdmin,
   inTrayQty = 0,
-  onConsume,
   onAddToTray,
   onToggleVote,
   onQuickRestock,
   onEditClick,
   onDeleteClick,
 }: SnackCardProps) {
-  const [busyAction, setBusyAction] = useState<'consume' | 'vote' | 'restock' | null>(null);
+  const [busyAction, setBusyAction] = useState<'vote' | 'restock' | null>(null);
   const [restockQty, setRestockQty] = useState<number>(10);
   const style = STATUS_STYLES[snack.status];
   const imgSrc = snack.image_url || CATEGORY_FALLBACK_IMG[snack.category];
-
-  async function handleConsume() {
-    if (snack.quantity <= 0 || busyAction) return;
-    setBusyAction('consume');
-    try {
-      await onConsume(snack);
-    } finally {
-      setBusyAction(null);
-    }
-  }
 
   async function handleVote() {
     if (busyAction) return;
@@ -184,33 +172,23 @@ export function SnackCard({
           </div>
         ) : (
           <div className="space-y-2">
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                disabled={snack.quantity <= 0 || busyAction !== null}
-                onClick={handleConsume}
-                title="Order 1 unit immediately and generate a Pickup Order Pass"
-                className="flex-1 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-semibold py-2 px-2.5 transition cursor-pointer disabled:cursor-not-allowed"
-              >
-                {busyAction === 'consume'
-                  ? 'Ordering...'
-                  : snack.quantity <= 0
-                  ? 'Out of Stock'
-                  : 'Quick Order 1'}
-              </button>
-
-              {onAddToTray && snack.quantity > 0 && (
-                <button
-                  type="button"
-                  disabled={inTrayQty >= snack.quantity}
-                  onClick={() => onAddToTray(snack)}
-                  title="Add to your Snack Tray to combine multiple snacks into one Order Number"
-                  className="rounded-lg bg-amber-50 hover:bg-amber-100 disabled:opacity-40 text-amber-900 border border-amber-200 text-xs font-semibold py-2 px-2.5 transition cursor-pointer"
-                >
-                  {inTrayQty > 0 ? `+ Tray (${inTrayQty})` : '+ Tray'}
-                </button>
-              )}
-            </div>
+            <button
+              type="button"
+              disabled={snack.quantity <= 0 || inTrayQty >= snack.quantity}
+              onClick={() => onAddToTray?.(snack)}
+              title={
+                snack.quantity <= 0
+                  ? 'Currently out of stock'
+                  : 'Add to your Snack Tray, then open My Tray & Orders to checkout and get your Order Number'
+              }
+              className="w-full rounded-lg bg-slate-900 hover:bg-slate-800 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-semibold py-2 px-3 transition cursor-pointer disabled:cursor-not-allowed"
+            >
+              {snack.quantity <= 0
+                ? 'Out of Stock'
+                : inTrayQty > 0
+                ? `+ Add Another (In Tray: ${inTrayQty})`
+                : '+ Add to Tray'}
+            </button>
 
             <button
               type="button"
@@ -227,7 +205,13 @@ export function SnackCard({
                   : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
               }`}
             >
-              <span>{snack.user_has_voted ? '▲ Upvoted' : '△ Vote for Restock'}</span>
+              <span>
+                {busyAction === 'vote'
+                  ? 'Updating...'
+                  : snack.user_has_voted
+                  ? '▲ Upvoted'
+                  : '△ Vote for Restock'}
+              </span>
               <span className="px-1.5 py-0.2 rounded bg-slate-100 text-slate-800 text-[11px]">
                 {snack.vote_count}
               </span>

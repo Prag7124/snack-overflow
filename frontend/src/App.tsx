@@ -6,6 +6,7 @@ import { LoginView } from './components/LoginView';
 import { MemberOrdersDrawer, type TrayItem } from './components/MemberOrdersDrawer';
 import { PantryBoard } from './components/PantryBoard';
 import { SnackFormModal } from './components/SnackFormModal';
+import { TeamModal } from './components/TeamModal';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import type { Snack } from './types';
 
@@ -15,6 +16,7 @@ function AppShell() {
   const [editingSnack, setEditingSnack] = useState<Snack | null>(null);
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
+  const [teamOpen, setTeamOpen] = useState(false);
   const [memberOrdersOpen, setMemberOrdersOpen] = useState(false);
   const [tray, setTray] = useState<TrayItem[]>([]);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -113,6 +115,15 @@ function AppShell() {
 
                 <button
                   type="button"
+                  onClick={() => setTeamOpen(true)}
+                  title="Create new Member or Admin accounts"
+                  className="rounded-lg bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-semibold px-3.5 py-2 transition cursor-pointer"
+                >
+                  👥 Team
+                </button>
+
+                <button
+                  type="button"
                   onClick={openAddModal}
                   title="Add a new snack item to the pantry"
                   className="rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold px-3.5 py-2 transition cursor-pointer"
@@ -154,7 +165,6 @@ function AppShell() {
           isAdmin={isAdmin}
           tray={tray}
           onAddToTray={!isAdmin ? handleAddToTray : undefined}
-          onOrderCreated={() => setRefreshTrigger((n) => n + 1)}
           onEditSnack={isAdmin ? openEditModal : undefined}
           onDeleteSnack={isAdmin ? handleDeleteSnack : undefined}
           refreshTrigger={refreshTrigger}
@@ -176,7 +186,10 @@ function AppShell() {
       />
 
       {isAdmin ? (
-        <ActivityDrawer open={activityOpen} onClose={() => setActivityOpen(false)} />
+        <>
+          <ActivityDrawer open={activityOpen} onClose={() => setActivityOpen(false)} />
+          <TeamModal open={teamOpen} onClose={() => setTeamOpen(false)} />
+        </>
       ) : (
         <MemberOrdersDrawer
           open={memberOrdersOpen}

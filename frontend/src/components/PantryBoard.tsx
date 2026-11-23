@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, ApiClientError } from '../api';
 import { useAuth } from '../context/AuthContext';
 import { usePantryStream, type SseEventMessage } from '../hooks/usePantryStream';
-import type { PantryOrder, Snack, SnackCategory, SnackStatus } from '../types';
+import type { Snack, SnackCategory, SnackStatus } from '../types';
 import type { TrayItem } from './MemberOrdersDrawer';
 import { SnackCard } from './SnackCard';
 
@@ -10,7 +10,6 @@ interface PantryBoardProps {
   isAdmin: boolean;
   tray?: TrayItem[];
   onAddToTray?: (snack: Snack) => void;
-  onOrderCreated?: (order: PantryOrder) => void;
   onEditSnack?: (snack: Snack) => void;
   onDeleteSnack?: (snack: Snack) => void;
   refreshTrigger?: number;
@@ -35,7 +34,6 @@ export function PantryBoard({
   isAdmin,
   tray = [],
   onAddToTray,
-  onOrderCreated,
   onEditSnack,
   onDeleteSnack,
   refreshTrigger = 0,
@@ -163,17 +161,9 @@ export function PantryBoard({
     };
   }, [snacks]);
 
-  async function handleQuickOrder(snack: Snack) {
-    if (!token) return;
-    try {
-      const order = await api.createOrder(token, [{ snack_id: snack.id, quantity: 1 }]);
-      fetchSnacks();
-      showToast(`Order ${order.order_code} confirmed for 1 × ${snack.name}!`);
-      onOrderCreated?.(order);
-    } catch (err) {
-      showToast(err instanceof ApiClientError ? err.message : 'Could not place order', 'error');
-      fetchSnacks();
-    }
+  function handleAdd(snack: Snack) {
+    onAddToTray?.(snack);
+    showToast(`Added ${snack.name} to your Tray — open My Tray & Orders to checkout`);
   }
 
   async function handleToggleVote(snack: Snack) {
@@ -183,6 +173,11 @@ export function PantryBoard({
         ? await api.unvoteSnack(token, snack.id)
         : await api.voteSnack(token, snack.id);
       setSnacks((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+      showToast(
+        updated.user_has_voted
+          ? `Upvoted ${snack.name} for restock`
+          : `Removed restock vote for ${snack.name}`
+      );
     } catch (err) {
       showToast(err instanceof ApiClientError ? err.message : 'Vote failed', 'error');
     }
@@ -292,8 +287,7 @@ export function PantryBoard({
                 snack={snack}
                 isAdmin={isAdmin}
                 inTrayQty={trayEntry?.quantity ?? 0}
-                onConsume={handleQuickOrder}
-                onAddToTray={onAddToTray}
+                onAddToTray={!isAdmin ? handleAdd : undefined}
                 onToggleVote={handleToggleVote}
                 onQuickRestock={handleQuickRestock}
                 onEditClick={onEditSnack}

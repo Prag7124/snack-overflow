@@ -67,6 +67,18 @@ export const api = {
 
   me: (token: string) => request<User>('/auth/me', {}, token),
 
+  listUsers: (token: string) => request<User[]>('/auth/users', {}, token),
+
+  createUser: (
+    token: string,
+    data: { name: string; email: string; password: string; role: 'admin' | 'member' }
+  ) =>
+    request<User>(
+      '/auth/users',
+      { method: 'POST', body: JSON.stringify(data) },
+      token
+    ),
+
   uploadSnackImage: async (token: string, file: File): Promise<string> => {
     const formData = new FormData();
     formData.append('file', file);

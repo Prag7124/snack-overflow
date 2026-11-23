@@ -26,6 +26,13 @@ class TokenResponse(BaseModel):
     user: UserOut
 
 
+
+class CreateUserRequest(BaseModel):
+    name: str = Field(..., min_length=2, max_length=100)
+    email: EmailStr
+    password: str = Field(..., min_length=6, max_length=100)
+    role: Literal["admin", "member"] = "member"
+
 # --- Snack Schemas ---
 SnackCategory = Literal["sweet", "savoury", "drink", "healthy-ish"]
 SnackStatus = Literal["stocked", "running_low", "gone"]

@@ -39,7 +39,6 @@ async def create_order(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # Merge duplicate snack_ids if passed in the same tray
     merged: dict[UUID, int] = {}
     for item in payload.items:
         merged[item.snack_id] = merged.get(item.snack_id, 0) + item.quantity
@@ -56,9 +55,9 @@ async def create_order(
     db.add(order)
     await db.flush()
 
-    updated_snacks_for_sse: list[Snack] = []
+    created_items_out: list[OrderItemOut] = []
+    sse_payloads: list[dict] = []
 
-    # Sort by snack_id to prevent deadlocks under concurrent multi-item checkouts
     for snack_id in sorted(merged.keys(), key=str):
         qty = merged[snack_id]
         snack_res = await db.execute(select(Snack).where(Snack.id == snack_id))
@@ -99,29 +98,45 @@ async def create_order(
                 order_code=order_code,
             )
         )
-        snack.quantity = new_qty
-        updated_snacks_for_sse.append(snack)
 
-    await db.commit()
-    await db.refresh(order)
-
-    for s in updated_snacks_for_sse:
-        await broadcaster.publish(
-            "snack.updated",
+        new_status = (
+            "gone"
+            if new_qty <= 0
+            else ("running_low" if new_qty <= snack.low_stock_threshold else "stocked")
+        )
+        created_items_out.append(
+            OrderItemOut(snack_id=snack.id, snack_name=snack.name, quantity=qty)
+        )
+        sse_payloads.append(
             {
-                "id": str(s.id),
-                "name": s.name,
-                "image_url": s.image_url,
-                "quantity": s.quantity,
-                "status": s.status,
+                "id": str(snack.id),
+                "name": snack.name,
+                "image_url": snack.image_url,
+                "quantity": new_qty,
+                "status": new_status,
                 "actor": current_user.name,
                 "action": "ordered",
-                "amount": merged[s.id],
+                "amount": qty,
                 "order_code": order_code,
-            },
+            }
         )
 
-    formatted = _format_order(order, current_user)
+    await db.commit()
+
+    formatted = OrderOut(
+        id=order.id,
+        order_code=order_code,
+        user_id=current_user.id,
+        user_name=current_user.name,
+        user_email=current_user.email,
+        status="pending_pickup",
+        total_items=sum(i.quantity for i in created_items_out),
+        items=created_items_out,
+        created_at=order.created_at,
+    )
+
+    for p in sse_payloads:
+        await broadcaster.publish("snack.updated", p)
     await broadcaster.publish("order.created", formatted.model_dump())
     return formatted
 
@@ -168,7 +183,6 @@ async def mark_order_handed_over(
     order, order_owner = row
     order.status = "handed_over"
     await db.commit()
-    await db.refresh(order)
 
     formatted = _format_order(order, order_owner)
     await broadcaster.publish("order.updated", formatted.model_dump())
