@@ -318,24 +318,47 @@ async def _build_live_analytics_snapshot(db: AsyncSession, role: str) -> str:
     return "\n".join(lines)
 
 
+LAST_GEMINI_STATUS = "not_called"
+
+
 async def _call_gemini(prompt: str) -> str | None:
-    api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    global LAST_GEMINI_STATUS
+    api_key = os.getenv("GEMINI_API_KEY", "").strip().strip('"').strip("'")
     if not api_key:
+        LAST_GEMINI_STATUS = "missing_key"
         return None
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={api_key}"
+
+    models_to_try = list(dict.fromkeys([GEMINI_MODEL, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest"]))
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {"temperature": 0.25, "maxOutputTokens": 450},
     }
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.post(url, json=payload)
-            if resp.status_code != 200:
-                return None
-            data = resp.json()
-            return data["candidates"][0]["content"]["parts"][0]["text"].strip()
-    except Exception:
-        return None
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        for model_name in models_to_try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+            try:
+                resp = await client.post(url, json=payload)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                    LAST_GEMINI_STATUS = f"ok:{model_name}"
+                    return text
+                LAST_GEMINI_STATUS = f"http_{resp.status_code}:{model_name}:{resp.text[:140]}"
+            except Exception as exc:
+                LAST_GEMINI_STATUS = f"error:{model_name}:{type(exc).__name__}"
+    return None
+
+
+@router.get("/engine-status")
+async def get_engine_status():
+    raw_key = os.getenv("GEMINI_API_KEY", "").strip()
+    test_reply = await _call_gemini("Reply with the single word: READY")
+    return {
+        "key_present": bool(raw_key),
+        "key_prefix": raw_key[:6] + "..." if len(raw_key) >= 6 else None,
+        "gemini_live": bool(test_reply),
+        "status": LAST_GEMINI_STATUS,
+    }
 
 
 def _suggest_new_additions(q_lower: str, snacks: list[Snack]) -> str:
