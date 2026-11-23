@@ -9,8 +9,6 @@ from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import (
-    ALGORITHM,
-    SECRET_KEY,
     create_access_token,
     get_current_user,
     hash_password,
@@ -30,6 +28,9 @@ from app.schemas import (
 )
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
+
+RESET_SECRET = os.getenv("JWT_SECRET", os.getenv("SECRET_KEY", "dev-secret-change-me"))
+RESET_ALGO = "HS256"
 
 
 def _send_reset_email_if_configured(to_email: str, user_name: str, reset_token: str) -> bool:
@@ -145,7 +146,6 @@ async def forgot_password(
     res = await db.execute(select(User).where(User.email == clean_email))
     user = res.scalar_one_or_none()
 
-    # Strict check: ex-employees removed by Admin or unknown emails cannot reset passwords
     if not user:
         raise AppError(
             404,
@@ -156,8 +156,8 @@ async def forgot_password(
     expire = datetime.now(timezone.utc) + timedelta(minutes=15)
     reset_token = jwt.encode(
         {"sub": str(user.id), "purpose": "password_reset", "exp": expire},
-        SECRET_KEY,
-        algorithm=ALGORITHM,
+        RESET_SECRET,
+        algorithm=RESET_ALGO,
     )
 
     email_sent = _send_reset_email_if_configured(user.email, user.name, reset_token)
@@ -178,7 +178,7 @@ async def reset_password(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        decoded = jwt.decode(payload.token.strip(), SECRET_KEY, algorithms=[ALGORITHM])
+        decoded = jwt.decode(payload.token.strip(), RESET_SECRET, algorithms=[RESET_ALGO])
     except jwt.ExpiredSignatureError:
         raise AppError(400, "RESET_TOKEN_EXPIRED", "Reset code has expired. Please request a new one.")
     except jwt.InvalidTokenError:
@@ -191,7 +191,6 @@ async def reset_password(
     res = await db.execute(select(User).where(User.id == UUID(user_id)))
     user = res.scalar_one_or_none()
 
-    # Double-check user was NOT deleted by Admin in the meantime
     if not user:
         raise AppError(
             403,
