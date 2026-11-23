@@ -19,13 +19,13 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 
 @router.post("/login", response_model=TokenResponse)
 async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User).where(User.email == payload.email.lower()))
+    result = await db.execute(select(User).where(User.email == payload.email.lower().strip()))
     user = result.scalar_one_or_none()
 
     if not user or not verify_password(payload.password, user.password_hash):
         raise AppError(401, "INVALID_CREDENTIALS", "Invalid email or password")
 
-    token = create_access_token(user_id=str(user.id), role=user.role)
+    token = create_access_token(user)
     return TokenResponse(access_token=token, user=UserOut.model_validate(user))
 
 
@@ -49,17 +49,22 @@ async def create_user(
     admin_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
+    clean_email = payload.email.lower().strip()
+    existing = await db.execute(select(User.id).where(User.email == clean_email))
+    if existing.scalar_one_or_none() is not None:
+        raise AppError(409, "EMAIL_EXISTS", f"A user with email '{clean_email}' already exists")
+
     new_user = User(
         name=payload.name.strip(),
-        email=payload.email.lower().strip(),
+        email=clean_email,
         password_hash=hash_password(payload.password),
         role=payload.role,
     )
     db.add(new_user)
     try:
         await db.commit()
-    except IntegrityError:
+    except IntegrityError as exc:
         await db.rollback()
-        raise AppError(409, "EMAIL_EXISTS", f"A user with email '{payload.email}' already exists")
+        raise AppError(400, "USER_CREATE_FAILED", f"Database constraint error: {exc.orig}")
 
     return UserOut.model_validate(new_user)

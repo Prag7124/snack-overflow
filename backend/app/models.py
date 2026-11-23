@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
@@ -30,9 +30,9 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    role: Mapped[str] = mapped_column(user_role_enum, nullable=False, default="member")
+    role: Mapped[str] = mapped_column(String(20), nullable=False, default="member")
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), server_default=func.now(), nullable=False
     )
 
 
@@ -50,7 +50,7 @@ class Snack(Base):
     image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     low_stock_threshold: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), server_default=func.now(), nullable=False
     )
 
     @property
@@ -74,7 +74,7 @@ class Vote(Base):
         UUID(as_uuid=True), ForeignKey("snacks.id", ondelete="CASCADE"), nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), server_default=func.now(), nullable=False
     )
 
 
@@ -88,7 +88,7 @@ class Order(Base):
     )
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending_pickup")
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), server_default=func.now(), nullable=False
     )
 
     items: Mapped[list["OrderItem"]] = relationship(
@@ -126,5 +126,5 @@ class Activity(Base):
     amount: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     order_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), server_default=func.now(), nullable=False
     )
