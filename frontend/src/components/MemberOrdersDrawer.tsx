@@ -169,7 +169,7 @@ export function MemberOrdersDrawer({
           </div>
 
           {/* Highlighted Latest Order Receipt */}
-          {latestOrder && (
+          {latestOrder && latestOrder.status !== 'handed_over' && (
             <div className="rounded-2xl border-2 border-emerald-500 bg-emerald-50/60 p-4 space-y-2.5">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-800">
@@ -205,7 +205,7 @@ export function MemberOrdersDrawer({
             ) : orders.length === 0 ? (
               <p className="text-xs text-slate-500">No orders placed yet.</p>
             ) : (
-              orders.map((ord) => (
+              orders.filter((o) => o.id !== latestOrder?.id || o.status === 'handed_over').slice(0, 5).map((ord) => (
                 <div
                   key={ord.id}
                   className="rounded-xl border border-slate-200 p-3.5 bg-white space-y-2 text-xs"
