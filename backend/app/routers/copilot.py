@@ -797,5 +797,6 @@ async def ask_copilot(
         return {
             'answer': ans or 'Pantry Copilot is online! Ask me about snack stock, votes, pickup passes, or restocking.',
             'source': 'gemini' if ans else 'smart-fallback',
+            'role_mode': role if 'role' in locals() else getattr(current_user, 'role', 'member'),
             'suggestions': ['What needs urgent restocking first?', 'Show pending pickup orders', 'Which snacks have the highest team votes?'],
         }
